@@ -1,0 +1,8 @@
+{
+  "waypoints_in_box": 248,
+  "median_offset_m": 0.0,
+  "abs_residual_p50_m": 0.03,
+  "abs_residual_p90_m": 0.14,
+  "p50_flat_lt5deg_m": 0.02,
+  "p50_steep_ge5deg_m": 0.08
+}
