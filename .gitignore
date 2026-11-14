@@ -5,3 +5,7 @@ venv/
 .DS_Store
 pipeline/work/
 examples/out/
+# raw downloads and intermediate grids stay out of git
+work/
+*.pyc
+.pytest_cache/

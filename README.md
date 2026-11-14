@@ -55,3 +55,32 @@ HiRISE: NASA/JPL/University of Arizona. CTX: NASA/JPL/MSSS. USGS Astrogeology (M
 ## AI use
 
 The data pipeline code was written with AI assistance (Claude). All data values come from the listed sources; every processing step is in `pipeline/` and reproducible with one command.
+
+## Route engine (`pipeline/04_routes.py`)
+
+Turns the aligned terrain layers into a cost grid, finds the cheapest safe path for each leg,
+precomputes every route variant, and writes `routes.json` + `time_home.bin` for the web app.
+
+```bash
+pip install -r requirements.txt
+python pipeline/04_routes.py --fake --preview     # fake hilly terrain -> work/fake/out/
+python pipeline/04_routes.py                      # real layers in work/grid/ -> data/
+python -m pytest tests
+```
+
+**Inputs** (from the Data pipeline, all 2000×2000 and aligned to the 2 m grid, in `work/grid/`):
+
+| File | Type | Meaning |
+| --- | --- | --- |
+| `slope_deg.npy` | float32, degrees, NaN = no data | required |
+| `sand.npy` | float32 0..1, 1 = soft sand | optional |
+| `rough.npy` | float32 0..1, 1 = very rough | optional |
+| `nogo.npy` | bool | optional, extra no-go cells |
+
+Plus `data/stops.json` (contract shape) and optionally `data/env.json` for the suit budget.
+
+**Outputs** in `data/`: `routes.json` (contract shape, plus `legs`, `walk_min`, `work_min`,
+`max_slope_deg`, `fits_budget` per variant) and `time_home.bin` (little-endian uint16, tenths of a
+minute, 65535 = unreachable, downsampled by `time_home.stride_px`; see `routes.json → time_home`).
+
+All weights, thresholds and walking-speed assumptions live in `pipeline/config.py`.
