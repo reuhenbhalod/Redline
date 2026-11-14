@@ -14,7 +14,10 @@
     "px": [
       749.1,
       1129.0
-    ]
+    ],
+    "closeup": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00337-08_malay/F_LRGB_0654_RZS_0320160_ORR_L_07MTELMJ02.png",
+    "closeup_dem": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00337-08_malay/F_LRGB_0654_DEM_0320160_ORR_L_07MTELMJ02.png",
+    "closeup_credit": "NASA/JPL-Caltech (PDS Geosciences Three Forks Depot Bundle)"
   },
   {
     "name": "Mageik",
@@ -31,7 +34,10 @@
     "px": [
       751.6,
       1132.0
-    ]
+    ],
+    "closeup": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00579-17_mageik/F_LRGB_0658_RZS_0320262_ORR_L_07MTELMJ01.png",
+    "closeup_dem": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00579-17_mageik/F_LRGB_0658_DEM_0320262_ORR_L_07MTELMJ01.png",
+    "closeup_credit": "NASA/JPL-Caltech (PDS Geosciences Three Forks Depot Bundle)"
   },
   {
     "name": "Crosswind Lake",
@@ -48,7 +54,10 @@
     "px": [
       757.5,
       1127.7
-    ]
+    ],
+    "closeup": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00639-21_crosswind_lake/F_LRGB_0663_RZS_0320390_ORR_L_07MTELMJ03.png",
+    "closeup_dem": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00639-21_crosswind_lake/F_LRGB_0663_DEM_0320390_ORR_L_07MTELMJ03.png",
+    "closeup_credit": "NASA/JPL-Caltech (PDS Geosciences Three Forks Depot Bundle)"
   },
   {
     "name": "Roubion",
@@ -65,7 +74,10 @@
     "px": [
       758.1,
       1124.8
-    ]
+    ],
+    "closeup": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00164-02_roubion/F_LRGB_0667_RZS_0320494_ORR_L_07MTELMJ03.png",
+    "closeup_dem": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00164-02_roubion/F_LRGB_0667_DEM_0320494_ORR_L_07MTELMJ03.png",
+    "closeup_credit": "NASA/JPL-Caltech (PDS Geosciences Three Forks Depot Bundle)"
   },
   {
     "name": "Coulettes",
@@ -82,7 +94,10 @@
     "px": [
       761.5,
       1126.1
-    ]
+    ],
+    "closeup": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00271-06_coulettes/F_LRGB_0670_RZS_0320592_ORR_L_07MTELMJ02.png",
+    "closeup_dem": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00271-06_coulettes/F_LRGB_0670_DEM_0320592_ORR_L_07MTELMJ02.png",
+    "closeup_credit": "NASA/JPL-Caltech (PDS Geosciences Three Forks Depot Bundle)"
   },
   {
     "name": "Montdenier",
@@ -99,7 +114,10 @@
     "px": [
       762.8,
       1123.4
-    ]
+    ],
+    "closeup": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00190-03_montdenier/F_LRGB_0674_RZS_0320684_ORR_L_07MTELMJ02.png",
+    "closeup_dem": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00190-03_montdenier/F_LRGB_0674_DEM_0320684_ORR_L_07MTELMJ02.png",
+    "closeup_credit": "NASA/JPL-Caltech (PDS Geosciences Three Forks Depot Bundle)"
   },
   {
     "name": "Bearwallow",
@@ -116,7 +134,10 @@
     "px": [
       765.4,
       1126.0
-    ]
+    ],
+    "closeup": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00516-15_bearwallow/F_LRGB_0678_RZS_0320786_ORR_L_07MTELMJ02.png",
+    "closeup_dem": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00516-15_bearwallow/F_LRGB_0678_DEM_0320786_ORR_L_07MTELMJ02.png",
+    "closeup_credit": "NASA/JPL-Caltech (PDS Geosciences Three Forks Depot Bundle)"
   },
   {
     "name": "Skyland",
@@ -133,7 +154,10 @@
     "px": [
       770.1,
       1117.8
-    ]
+    ],
+    "closeup": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00495-12_skyland/F_LRGB_0681_RZS_0320908_ORR_L_07MTELMJ02.png",
+    "closeup_dem": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00495-12_skyland/F_LRGB_0681_DEM_0320908_ORR_L_07MTELMJ02.png",
+    "closeup_credit": "NASA/JPL-Caltech (PDS Geosciences Three Forks Depot Bundle)"
   },
   {
     "name": "Atsah",
@@ -150,7 +174,10 @@
     "px": [
       772.8,
       1116.0
-    ]
+    ],
+    "closeup": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00374-10_atsah/F_LRGB_0684_RZS_0321050_ORR_L_07MTELMJ01.png",
+    "closeup_dem": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00374-10_atsah/F_LRGB_0684_DEM_0321050_ORR_L_07MTELMJ01.png",
+    "closeup_credit": "NASA/JPL-Caltech (PDS Geosciences Three Forks Depot Bundle)"
   },
   {
     "name": "Amalik Witness",
@@ -167,6 +194,9 @@
     "px": [
       768.5,
       1106.9
-    ]
+    ],
+    "closeup": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00586-18_amalik_witness/F_LRGB_0693_RZS_0321196_ORR_L_07MTELMJ02.png",
+    "closeup_dem": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/ortho_mosaics/m2020-00586-18_amalik_witness/F_LRGB_0693_DEM_0321196_ORR_L_07MTELMJ02.png",
+    "closeup_credit": "NASA/JPL-Caltech (PDS Geosciences Three Forks Depot Bundle)"
   }
 ]
