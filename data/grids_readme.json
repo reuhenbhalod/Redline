@@ -1,0 +1,74 @@
+{
+  "shape": [
+    2000,
+    2000
+  ],
+  "index": "grid[row=y, col=x]; pixel [x, y] origin top-left, x east, y south, 2 m",
+  "arrays": {
+    "elevation_m": "float32, m (geoid), rounded to 1 cm",
+    "slope_deg": "float16, deg",
+    "rough_m": "float16, m",
+    "sand": "0 none, 1 small bedforms, 2 large bedforms",
+    "rocky": "0/1",
+    "geo_unit": "ID -> unit name in 'units'",
+    "mineral": "CRISM class ID -> 'minerals'; 0 unidentified, 254 uncertain, 255 no coverage",
+    "mineral_conf": "2 high, 1 medium, 0 n/a",
+    "thermal_inertia": "float16 TIU, context only",
+    "nogo": "0/1 (slope/roughness/no data; sand is never no-go)"
+  },
+  "units": {
+    "1": "Aeolian bedforms, large",
+    "2": "Aeolian bedforms, small",
+    "3": "Crater floor fractured 1",
+    "4": "Crater floor fractured 2",
+    "5": "Crater floor fractured rough",
+    "6": "Crater rim blocky",
+    "7": "Crater rim breccia",
+    "8": "Crater rim layered",
+    "9": "Crater rim rough",
+    "10": "Delta blocky",
+    "11": "Delta layered rough",
+    "12": "Delta thickly layered",
+    "13": "Delta thinly layered",
+    "14": "Delta truncated curvilinear layered",
+    "15": "Margin fractured",
+    "16": "Minor Cover Us",
+    "17": "Moderate Cover Us",
+    "18": "Neretva Vallis layered",
+    "19": "Nili Planum fractured",
+    "20": "Talus",
+    "21": "Undifferentiated smooth"
+  },
+  "minerals": {
+    "1": "Olivine",
+    "2": "Mg-carbonate",
+    "3": "Fe/Mg-smectite",
+    "4": "Olivine + smectite",
+    "5": "Olivine/smectite + 2.2 µm",
+    "6": "Carbonate + 2.2 µm",
+    "7": "High-Ca pyroxene",
+    "8": "Low-Ca pyroxene",
+    "9": "Kaolinite",
+    "10": "Mg-smectite 2"
+  },
+  "limits": {
+    "slope_soft_deg": {
+      "value": 15.0,
+      "unit": "deg",
+      "source": "PROVISIONAL",
+      "status": "to cite in D6"
+    },
+    "slope_hard_deg": {
+      "value": 25.0,
+      "unit": "deg",
+      "source": "PROVISIONAL",
+      "status": "to cite in D6"
+    },
+    "rough_hard_m": {
+      "value": 0.5,
+      "unit": "m (detrended height std, 8 m window)",
+      "source": "PROVISIONAL",
+      "status": "to cite in D6"
+    }
+  }
+}

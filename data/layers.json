@@ -1,0 +1,340 @@
+{
+  "grid": {
+    "width_px": 2000,
+    "height_px": 2000,
+    "pixel_m": 2.0
+  },
+  "context_map": {
+    "source": "JPL Mars Trek",
+    "layers": [
+      "MRO HiRISE, Jezero Mosaic, Controlled",
+      "MRO CTX, Jezero Mosaic, Controlled"
+    ]
+  },
+  "layers": [
+    {
+      "id": "slope",
+      "file": "layers/slope.png",
+      "label": "Slope",
+      "source": "HiRISE DTM (USGS Mars 2020 TRN), slope computed on the local 1 m grid, 2x2 max",
+      "native_res": "1 m posting (~3 m effective)",
+      "time_frame": "timeless",
+      "legend": [
+        {
+          "color": "#ffe066",
+          "label": "10-15°"
+        },
+        {
+          "color": "#ff9a3c",
+          "label": "15-25° (slow)"
+        },
+        {
+          "color": "#e8202a",
+          "label": "> 25° (no-go)"
+        }
+      ],
+      "note": "limits are provisional until cited (D6)",
+      "trek_context": null
+    },
+    {
+      "id": "rough",
+      "file": "layers/rough.png",
+      "label": "Rough ground",
+      "source": "HiRISE DTM, std of detrended height in an 8 m window",
+      "native_res": "~3 m effective",
+      "time_frame": "timeless",
+      "legend": [
+        {
+          "color": "#7fd34e",
+          "label": "0.12-0.2 m"
+        },
+        {
+          "color": "#22a884",
+          "label": "0.2-0.5 m"
+        },
+        {
+          "color": "#2a0f5c",
+          "label": "> 0.5 m (no-go)"
+        }
+      ],
+      "note": "does not resolve single rocks under ~1-2 m; see rocky units",
+      "trek_context": null
+    },
+    {
+      "id": "sand",
+      "file": "layers/sand.png",
+      "label": "Sand ripples and dunes",
+      "source": "Stack et al. 2020, Photogeologic map of the Perseverance field site (CC-BY-4.0)",
+      "native_res": "1:5000 map on 25 cm HiRISE",
+      "time_frame": "timeless",
+      "legend": [
+        {
+          "color": "#ffb000",
+          "label": "Small bedforms"
+        },
+        {
+          "color": "#ff5000",
+          "label": "Large bedforms (ridges)"
+        }
+      ],
+      "note": "slow, soft ground: a walking cost, not a no-go (the depot itself is on bedforms)",
+      "trek_context": null
+    },
+    {
+      "id": "rocky",
+      "file": "layers/rocky.png",
+      "label": "Rocky and blocky ground",
+      "source": "Stack et al. 2020 units: Crater floor fractured rough, Crater rim blocky, Delta blocky, Talus",
+      "native_res": "1:5000 map",
+      "time_frame": "timeless",
+      "legend": [
+        {
+          "color": "#00c8ff",
+          "label": "Blocky / talus / rough fractured"
+        }
+      ],
+      "note": "",
+      "trek_context": null
+    },
+    {
+      "id": "geology",
+      "file": "layers/geology.png",
+      "label": "Rock and surface units",
+      "source": "Stack et al. 2020 (surface unit where mapped, else bedrock unit)",
+      "native_res": "1:5000 map",
+      "time_frame": "timeless",
+      "legend": [
+        {
+          "color": "#1f77b4",
+          "label": "Aeolian bedforms, large"
+        },
+        {
+          "color": "#aec7e8",
+          "label": "Aeolian bedforms, small"
+        },
+        {
+          "color": "#ff7f0e",
+          "label": "Crater floor fractured 1"
+        },
+        {
+          "color": "#ffbb78",
+          "label": "Crater floor fractured 2"
+        },
+        {
+          "color": "#2ca02c",
+          "label": "Crater floor fractured rough"
+        },
+        {
+          "color": "#98df8a",
+          "label": "Crater rim blocky"
+        },
+        {
+          "color": "#d62728",
+          "label": "Crater rim breccia"
+        },
+        {
+          "color": "#ff9896",
+          "label": "Crater rim layered"
+        },
+        {
+          "color": "#9467bd",
+          "label": "Crater rim rough"
+        },
+        {
+          "color": "#c5b0d5",
+          "label": "Delta blocky"
+        },
+        {
+          "color": "#8c564b",
+          "label": "Delta layered rough"
+        },
+        {
+          "color": "#c49c94",
+          "label": "Delta thickly layered"
+        },
+        {
+          "color": "#e377c2",
+          "label": "Delta thinly layered"
+        },
+        {
+          "color": "#f7b6d2",
+          "label": "Delta truncated curvilinear layered"
+        },
+        {
+          "color": "#7f7f7f",
+          "label": "Margin fractured"
+        },
+        {
+          "color": "#c7c7c7",
+          "label": "Minor Cover Us"
+        },
+        {
+          "color": "#bcbd22",
+          "label": "Moderate Cover Us"
+        },
+        {
+          "color": "#dbdb8d",
+          "label": "Neretva Vallis layered"
+        },
+        {
+          "color": "#17becf",
+          "label": "Nili Planum fractured"
+        },
+        {
+          "color": "#9edae5",
+          "label": "Talus"
+        },
+        {
+          "color": "#1f77b4",
+          "label": "Undifferentiated smooth"
+        }
+      ],
+      "note": "",
+      "trek_context": null
+    },
+    {
+      "id": "minerals",
+      "file": "layers/minerals.png",
+      "label": "Minerals (CRISM)",
+      "source": "Parente et al., CRISM dominant mineralogy of Jezero (Zenodo 5575824, CC-BY-4.0)",
+      "native_res": "36 m (4 CRISM scenes)",
+      "time_frame": "orbital, 2007-2016 observations",
+      "legend": [
+        {
+          "color": "#ff0000",
+          "label": "Olivine (high confidence)"
+        },
+        {
+          "color": "#ff0000",
+          "label": "Olivine (medium confidence)"
+        },
+        {
+          "color": "#00ff00",
+          "label": "Mg-carbonate (high confidence)"
+        },
+        {
+          "color": "#00ff00",
+          "label": "Mg-carbonate (medium confidence)"
+        },
+        {
+          "color": "#00ffff",
+          "label": "Fe/Mg-smectite (high confidence)"
+        },
+        {
+          "color": "#00ffff",
+          "label": "Fe/Mg-smectite (medium confidence)"
+        },
+        {
+          "color": "#ff8072",
+          "label": "Olivine + smectite (high confidence)"
+        },
+        {
+          "color": "#ff8072",
+          "label": "Olivine + smectite (medium confidence)"
+        },
+        {
+          "color": "#808000",
+          "label": "Olivine/smectite + 2.2 µm (high confidence)"
+        },
+        {
+          "color": "#808000",
+          "label": "Olivine/smectite + 2.2 µm (medium confidence)"
+        },
+        {
+          "color": "#ffd700",
+          "label": "Carbonate + 2.2 µm (high confidence)"
+        },
+        {
+          "color": "#ffd700",
+          "label": "Carbonate + 2.2 µm (medium confidence)"
+        },
+        {
+          "color": "#ff8000",
+          "label": "High-Ca pyroxene (high confidence)"
+        },
+        {
+          "color": "#ff8000",
+          "label": "High-Ca pyroxene (medium confidence)"
+        },
+        {
+          "color": "#daa520",
+          "label": "Low-Ca pyroxene (high confidence)"
+        },
+        {
+          "color": "#daa520",
+          "label": "Low-Ca pyroxene (medium confidence)"
+        },
+        {
+          "color": "#8b4513",
+          "label": "Kaolinite (high confidence)"
+        },
+        {
+          "color": "#8b4513",
+          "label": "Kaolinite (medium confidence)"
+        },
+        {
+          "color": "#0000ff",
+          "label": "Mg-smectite 2 (high confidence)"
+        },
+        {
+          "color": "#0000ff",
+          "label": "Mg-smectite 2 (medium confidence)"
+        }
+      ],
+      "note": "transparent = not identified, no coverage, or edge blend; names are closest spectral matches (see readme)",
+      "trek_context": null
+    },
+    {
+      "id": "ti",
+      "file": "layers/ti.png",
+      "label": "Thermal inertia (context)",
+      "source": "Edwards & Buz, THEMIS TI of Jezero (Zenodo 4931348, CC-BY-4.0)",
+      "native_res": "100 m",
+      "time_frame": "orbital",
+      "legend": [
+        {
+          "color": "#000004",
+          "label": "150-175 TIU"
+        },
+        {
+          "color": "#420a68",
+          "label": "175-200 TIU"
+        },
+        {
+          "color": "#932667",
+          "label": "200-225 TIU"
+        },
+        {
+          "color": "#dd513a",
+          "label": "225-250 TIU"
+        },
+        {
+          "color": "#fca50a",
+          "label": "250-275 TIU"
+        },
+        {
+          "color": "#fcffa4",
+          "label": "275-300 TIU"
+        }
+      ],
+      "note": "too coarse to find sand at walk scale (no low-inertia patches in the box); context only",
+      "trek_context": null
+    },
+    {
+      "id": "nogo",
+      "file": "layers/nogo.png",
+      "label": "No-go",
+      "source": "slope > hard limit, roughness > hard limit, or no data",
+      "native_res": "2 m",
+      "time_frame": "timeless",
+      "legend": [
+        {
+          "color": "#b00020",
+          "label": "No-go"
+        }
+      ],
+      "note": "provisional limits until cited (D6)",
+      "trek_context": null
+    }
+  ]
+}

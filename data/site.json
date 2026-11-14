@@ -40,7 +40,12 @@
     "px": [
       702.3,
       954.5
-    ]
+    ],
+    "hirise_slope_p90_deg": 7.2,
+    "hirise_rough_p90_m": 0.06,
+    "nogo_frac": 0.0,
+    "sand_frac": 0.0,
+    "walkable_work_area": true
   },
   "stop_a_shortlist": [
     {
@@ -63,7 +68,12 @@
       "px": [
         702.3,
         954.5
-      ]
+      ],
+      "hirise_slope_p90_deg": 7.2,
+      "hirise_rough_p90_m": 0.06,
+      "nogo_frac": 0.0,
+      "sand_frac": 0.0,
+      "walkable_work_area": true
     },
     {
       "sol": 464,
@@ -86,7 +96,12 @@
       "px": [
         700.1,
         946.2
-      ]
+      ],
+      "hirise_slope_p90_deg": 23.2,
+      "hirise_rough_p90_m": 0.17,
+      "nogo_frac": 0.041,
+      "sand_frac": 0.0,
+      "walkable_work_area": false
     },
     {
       "sol": 455,
@@ -106,7 +121,12 @@
       "px": [
         707.5,
         973.0
-      ]
+      ],
+      "hirise_slope_p90_deg": 19.5,
+      "hirise_rough_p90_m": 0.12,
+      "nogo_frac": 0.0,
+      "sand_frac": 0.0,
+      "walkable_work_area": false
     },
     {
       "sol": 460,
@@ -126,7 +146,12 @@
       "px": [
         712.2,
         966.9
-      ]
+      ],
+      "hirise_slope_p90_deg": 19.4,
+      "hirise_rough_p90_m": 0.12,
+      "nogo_frac": 0.0,
+      "sand_frac": 0.0,
+      "walkable_work_area": false
     },
     {
       "sol": 535,
@@ -146,7 +171,12 @@
       "px": [
         737.0,
         959.3
-      ]
+      ],
+      "hirise_slope_p90_deg": 9.6,
+      "hirise_rough_p90_m": 0.07,
+      "nogo_frac": 0.0,
+      "sand_frac": 0.0,
+      "walkable_work_area": true
     },
     {
       "sol": 536,
@@ -166,7 +196,12 @@
       "px": [
         772.1,
         963.3
-      ]
+      ],
+      "hirise_slope_p90_deg": 21.4,
+      "hirise_rough_p90_m": 0.14,
+      "nogo_frac": 0.025,
+      "sand_frac": 0.0,
+      "walkable_work_area": false
     },
     {
       "sol": 537,
@@ -186,7 +221,12 @@
       "px": [
         779.8,
         963.5
-      ]
+      ],
+      "hirise_slope_p90_deg": 23.4,
+      "hirise_rough_p90_m": 0.13,
+      "nogo_frac": 0.0,
+      "sand_frac": 0.0,
+      "walkable_work_area": false
     },
     {
       "sol": 606,
@@ -206,7 +246,12 @@
       "px": [
         507.0,
         1102.1
-      ]
+      ],
+      "hirise_slope_p90_deg": 8.5,
+      "hirise_rough_p90_m": 0.08,
+      "nogo_frac": 0.0,
+      "sand_frac": 0.0,
+      "walkable_work_area": true
     },
     {
       "sol": 629,
@@ -226,7 +271,12 @@
       "px": [
         518.7,
         1131.2
-      ]
+      ],
+      "hirise_slope_p90_deg": 9.1,
+      "hirise_rough_p90_m": 0.06,
+      "nogo_frac": 0.0,
+      "sand_frac": 0.0,
+      "walkable_work_area": true
     },
     {
       "sol": 538,
@@ -246,7 +296,12 @@
       "px": [
         775.0,
         970.9
-      ]
+      ],
+      "hirise_slope_p90_deg": 23.4,
+      "hirise_rough_p90_m": 0.18,
+      "nogo_frac": 0.05,
+      "sand_frac": 0.0,
+      "walkable_work_area": false
     }
   ],
   "depot_samples_cored": [
@@ -325,5 +380,5 @@
     "stop_a": "Perseverance waypoint sols 400-640, 300-2000 m from depot, Stack Delta bedrock, not on bedforms, ranked by CRISM clay fraction within 75 m (+0.15 if a depot sample was cored there)",
     "habitat": "CTX mean slope within 100 m <= 2.0 deg, 1000-2000 m from depot, not on bedforms/rocky/delta units, all stops fit the box with a 300 m margin"
   },
-  "status": "D1 draft; stop A final pick in D3 after HiRISE slope"
+  "status": "D3: stop A final"
 }
