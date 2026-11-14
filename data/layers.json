@@ -26,14 +26,14 @@
         },
         {
           "color": "#ff9a3c",
-          "label": "15-25° (slow)"
+          "label": "15-20° (slow)"
         },
         {
           "color": "#e8202a",
-          "label": "> 25° (no-go)"
+          "label": "> 20° (no-go)"
         }
       ],
-      "note": "limits are provisional until cited (D6)",
+      "note": "slope_soft_deg = 15.0 (assumption); slope_hard_deg = 20.0 (secondary)",
       "trek_context": null
     },
     {
@@ -333,7 +333,7 @@
           "label": "No-go"
         }
       ],
-      "note": "provisional limits until cited (D6)",
+      "note": "slope_hard_deg = 20.0 (secondary); rough_hard_m = 0.5 (assumption)",
       "trek_context": null
     }
   ]

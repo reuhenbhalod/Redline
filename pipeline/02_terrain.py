@@ -97,7 +97,7 @@ def main():
     nogo = (slope > P.v("slope_hard_deg")) | (rough > P.v("rough_hard_m")) | nodata
     print(f"  slope 2 m: median {np.median(slope):.1f}, p95 {np.percentile(slope,95):.1f}, >15 deg {np.mean(slope>15):.1%}, >25 deg {np.mean(slope>25):.1%}")
     print(f"  roughness: median {np.median(rough):.2f} m, p95 {np.percentile(rough,95):.2f} m")
-    print(f"  no-go: {nogo.mean():.1%} of cells (PROVISIONAL limits until D6)")
+    print(f"  no-go: {nogo.mean():.1%} of cells (slope > {P.v('slope_hard_deg')} deg or roughness > {P.v('rough_hard_m')} m)")
 
     ortho = to_local(ort_p, g, 2.0, Resampling.average, np.float32, np.nan)
     print(f"  ortho 2 m no-data {np.isnan(ortho).mean():.4%}")

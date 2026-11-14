@@ -99,7 +99,7 @@
       ],
       "hirise_slope_p90_deg": 23.2,
       "hirise_rough_p90_m": 0.17,
-      "nogo_frac": 0.041,
+      "nogo_frac": 0.273,
       "sand_frac": 0.0,
       "walkable_work_area": false
     },
@@ -124,7 +124,7 @@
       ],
       "hirise_slope_p90_deg": 19.5,
       "hirise_rough_p90_m": 0.12,
-      "nogo_frac": 0.0,
+      "nogo_frac": 0.025,
       "sand_frac": 0.0,
       "walkable_work_area": false
     },
@@ -149,7 +149,7 @@
       ],
       "hirise_slope_p90_deg": 19.4,
       "hirise_rough_p90_m": 0.12,
-      "nogo_frac": 0.0,
+      "nogo_frac": 0.008,
       "sand_frac": 0.0,
       "walkable_work_area": false
     },
@@ -199,7 +199,7 @@
       ],
       "hirise_slope_p90_deg": 21.4,
       "hirise_rough_p90_m": 0.14,
-      "nogo_frac": 0.025,
+      "nogo_frac": 0.157,
       "sand_frac": 0.0,
       "walkable_work_area": false
     },
@@ -224,7 +224,7 @@
       ],
       "hirise_slope_p90_deg": 23.4,
       "hirise_rough_p90_m": 0.13,
-      "nogo_frac": 0.0,
+      "nogo_frac": 0.339,
       "sand_frac": 0.0,
       "walkable_work_area": false
     },
@@ -299,7 +299,7 @@
       ],
       "hirise_slope_p90_deg": 23.4,
       "hirise_rough_p90_m": 0.18,
-      "nogo_frac": 0.05,
+      "nogo_frac": 0.347,
       "sand_frac": 0.0,
       "walkable_work_area": false
     }

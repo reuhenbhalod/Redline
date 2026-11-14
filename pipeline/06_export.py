@@ -36,7 +36,8 @@ def main():
     units = {int(k): v for k, v in json.loads((WORK / "units.json").read_text()).items()}
     soft, hard, rh = P.v("slope_soft_deg"), P.v("slope_hard_deg"), P.v("rough_hard_m")
     nogo = (t["slope_deg"] > hard) | (t["rough_m"] > rh) | t["nodata"]   # sand is a cost, never no-go
-    prov = any(P.PARAMS[k]["source"] == "PROVISIONAL" for k in ("slope_soft_deg", "slope_hard_deg", "rough_hard_m"))
+    def basis_note(*keys):
+        return "; ".join(f"{k} = {P.v(k)} ({P.PARAMS[k]['basis']})" for k in keys)
     layers = []
 
     def add(id_, label, source, native, time_frame, legend, note=""):
@@ -50,7 +51,7 @@ def main():
         classes_png(s, [(lambda a: (a >= 10) & (a < soft), "#ffe066", .35, f"10-{soft:g}°"),
                         (lambda a: (a >= soft) & (a < hard), "#ff9a3c", .5, f"{soft:g}-{hard:g}° (slow)"),
                         (lambda a: a >= hard, "#e8202a", .65, f"> {hard:g}° (no-go)")], C.LAYERS / "slope.png"),
-        "limits are provisional until cited (D6)" if prov else "")
+        basis_note("slope_soft_deg", "slope_hard_deg"))
     r = t["rough_m"]
     add("rough", "Rough ground", "HiRISE DTM, std of detrended height in an 8 m window", "~3 m effective", "timeless",
         classes_png(r, [(lambda a: (a >= .12) & (a < .2), "#7fd34e", .35, "0.12-0.2 m"),
@@ -84,7 +85,7 @@ def main():
         "too coarse to find sand at walk scale (no low-inertia patches in the box); context only")
     add("nogo", "No-go", "slope > hard limit, roughness > hard limit, or no data", "2 m", "timeless",
         classes_png(nogo.astype(np.uint8), [(1, "#b00020", .55, "No-go")], C.LAYERS / "nogo.png"),
-        "provisional limits until cited (D6)" if prov else "")
+        basis_note("slope_hard_deg", "rough_hard_m"))
 
     for l in layers:
         l["trek_context"] = None
@@ -107,8 +108,24 @@ def main():
                    "nogo": "0/1 (slope/roughness/no data; sand is never no-go)"},
         "units": units, "minerals": {c[0]: c[1] for c in U.CRISM_CLASSES},
         "limits": {k: P.PARAMS[k] for k in ("slope_soft_deg", "slope_hard_deg", "rough_hard_m")}}, indent=2, ensure_ascii=False))
+    (C.DATA / "safety_params.json").write_text(json.dumps({"params": P.PARAMS, "mars_g": P.MARS_G,
+                                                           "assumptions": P.assumptions()}, indent=2, ensure_ascii=False))
+    connectivity(nogo)
     sz = (C.DATA / "grids.npz").stat().st_size
     print(f"wrote {len(layers)} overlays, layers.json, grids.npz ({sz/1e6:.1f} MB), no-go {nogo.mean():.1%}")
+
+
+def connectivity(nogo):
+    """QA: habitat, stop A and every tube must sit in one connected walkable region (8-connected)."""
+    from scipy import ndimage
+    lab, n = ndimage.label(~nogo, structure=np.ones((3, 3)))
+    site = json.loads((C.DATA / "site.json").read_text())
+    pts = {"H": site["habitat"]["px"], "A": site["stop_a"]["px"]}
+    pts |= {t["name"]: t["px"] for t in json.loads((C.DATA / "depot.json").read_text())}
+    ids = {k: int(lab[int(round(p[1])), int(round(p[0]))]) for k, p in pts.items()}
+    assert 0 not in ids.values(), f"a stop is on a no-go cell: {ids}"
+    assert len(set(ids.values())) == 1, f"stops are not connected: {ids}"
+    print(f"connectivity: habitat, stop A and all {len(pts) - 2} tubes are in one walkable region")
 
 
 if __name__ == "__main__":

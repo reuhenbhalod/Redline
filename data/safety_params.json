@@ -1,0 +1,113 @@
+{
+  "params": {
+    "slope_hard_deg": {
+      "value": 20.0,
+      "unit": "deg",
+      "basis": "secondary",
+      "source": "Lunar traverse planning guideline (traverses on slopes < 20 deg), Pena-Asensio et al. 2023, Acta Astronautica, doi:10.1016/j.actaastro.2023.10.010, as quoted in Universe Today / phys.org (Oct 2023)",
+      "note": "lunar guideline applied to Mars"
+    },
+    "slope_soft_deg": {
+      "value": 15.0,
+      "unit": "deg",
+      "basis": "assumption",
+      "source": "ASSUMPTION: start of the 'slow, careful' band below the 20 deg hard limit",
+      "note": "used for map coloring and for checking stop work areas"
+    },
+    "rough_hard_m": {
+      "value": 0.5,
+      "unit": "m (std of detrended height, 8 m window)",
+      "basis": "assumption",
+      "source": "ASSUMPTION: ~0.5 m of local relief within 8 m is treated as a blocky field a suited crew should avoid",
+      "note": "DTM cannot see single rocks under ~1-2 m; Stack 'rocky' units add a cost"
+    },
+    "walk_speed_flat_kmh": {
+      "value": 2.0,
+      "unit": "km/h",
+      "basis": "primary",
+      "source": "Apollo 15 crew average walking speed rose from ~1 km/h (EVA 1) to ~2 km/h (EVA 2), Apollo Lunar Surface Journal, NASA (https://www.nasa.gov/wp-content/uploads/static/history/alsj/a11/a11.gaits.html)",
+      "note": "lunar (1/6 g) experience; Mars is 0.38 g"
+    },
+    "walkback_speed_kmh": {
+      "value": 2.7,
+      "unit": "km/h",
+      "basis": "primary",
+      "source": "Apollo planners assumed 2.7 km/h for walkbacks longer than an hour (3.6 km/h for one hour), Apollo Lunar Surface Journal, NASA",
+      "note": "use the slower flat speed (2.0) for planning; 2.7 is the Apollo emergency figure"
+    },
+    "slope_speed_model": {
+      "value": "tobler",
+      "unit": "speed(s) = v_flat * exp(-3.5*|s + 0.05|) / exp(-3.5*0.05), s = rise/run",
+      "basis": "assumption",
+      "source": "Shape of Tobler's hiking function (Tobler 1993, NCGIA Technical Report 93-1), normalized to v_flat; ASSUMPTION that the Earth hiking shape applies to suited walking on Mars",
+      "note": "Engine applies this per 2 m cell along the path direction"
+    },
+    "speed_factor_sand_small": {
+      "value": 0.85,
+      "unit": "x speed",
+      "basis": "assumption",
+      "source": "ASSUMPTION: small bedforms (ripples) slow walking ~15%"
+    },
+    "speed_factor_sand_large": {
+      "value": 0.6,
+      "unit": "x speed",
+      "basis": "assumption",
+      "source": "ASSUMPTION: large bedforms (ripple ridges, soft crests) slow walking ~40%"
+    },
+    "speed_factor_rocky": {
+      "value": 0.75,
+      "unit": "x speed",
+      "basis": "assumption",
+      "source": "ASSUMPTION: blocky/talus units slow walking ~25%"
+    },
+    "suit_budget_min": {
+      "value": 480,
+      "unit": "min",
+      "basis": "primary",
+      "source": "xEMU designed for EVAs up to 8 h (6 +/- 2 h), NASA Lunar Surface EVA Concept of Operations (2020), https://www.nasa.gov/wp-content/uploads/2020/01/topic_1-_eva_lunar_surface_concept_of_operations.pdf"
+    },
+    "reserve_min": {
+      "value": 30,
+      "unit": "min",
+      "basis": "primary",
+      "source": "Legacy EMU: 8 h primary life support + 30 min backup life support (NASA EMU documentation; summarized on Wikipedia 'Extravehicular Mobility Unit')",
+      "note": "kept untouched: the 'time home + reserve' alert fires before the reserve is needed"
+    },
+    "apollo_time_in_suit_min": {
+      "value": 300,
+      "unit": "min",
+      "basis": "primary",
+      "source": "Apollo planners treated a ~5 h time-in-suit limit as the main constraint on rover-assisted traverses, NTRS 19700009560 (https://ntrs.nasa.gov/api/citations/19700009560/downloads/19700009560.pdf)",
+      "note": "historical reference shown next to our 8 h budget"
+    },
+    "max_walkback_km": {
+      "value": 10,
+      "unit": "km",
+      "basis": "primary",
+      "source": "~10 km max excursion a suited crew could walk back from after a rover failure (https://core.ac.uk/works/15254764)"
+    },
+    "work_min_science_stop": {
+      "value": 45,
+      "unit": "min",
+      "basis": "assumption",
+      "source": "ASSUMPTION: observe, photograph, and sample one outcrop"
+    },
+    "work_min_depot": {
+      "value": 40,
+      "unit": "min",
+      "basis": "assumption",
+      "source": "ASSUMPTION: ~4 min per tube for 10 tubes, loaded onto the rover"
+    }
+  },
+  "mars_g": 3.71,
+  "assumptions": [
+    "slope_soft_deg: 15.0 deg - ASSUMPTION: start of the 'slow, careful' band below the 20 deg hard limit",
+    "rough_hard_m: 0.5 m (std of detrended height, 8 m window) - ASSUMPTION: ~0.5 m of local relief within 8 m is treated as a blocky field a suited crew should avoid",
+    "slope_speed_model: tobler speed(s) = v_flat * exp(-3.5*|s + 0.05|) / exp(-3.5*0.05), s = rise/run - Shape of Tobler's hiking function (Tobler 1993, NCGIA Technical Report 93-1), normalized to v_flat; ASSUMPTION that the Earth hiking shape applies to suited walking on Mars",
+    "speed_factor_sand_small: 0.85 x speed - ASSUMPTION: small bedforms (ripples) slow walking ~15%",
+    "speed_factor_sand_large: 0.6 x speed - ASSUMPTION: large bedforms (ripple ridges, soft crests) slow walking ~40%",
+    "speed_factor_rocky: 0.75 x speed - ASSUMPTION: blocky/talus units slow walking ~25%",
+    "work_min_science_stop: 45 min - ASSUMPTION: observe, photograph, and sample one outcrop",
+    "work_min_depot: 40 min - ASSUMPTION: ~4 min per tube for 10 tubes, loaded onto the rover"
+  ]
+}
