@@ -1,0 +1,194 @@
+{
+  "sources": [
+    {
+      "name": "HiRISE DTM mosaic (Mars 2020 TRN)",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/mars2020_trn/HiRISE/JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif",
+      "license": "Public domain (USGS/NASA)",
+      "credit": "NASA/JPL/University of Arizona; USGS Astrogeology (Mars 2020 TRN products)",
+      "processing": "window read for the box, reprojected to local true-scale grid, smoothed, slope/roughness/no-go"
+    },
+    {
+      "name": "HiRISE orthomosaic 25 cm (Mars 2020 TRN)",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/mars2020_trn/HiRISE/JEZ_hirise_soc_006_orthoMosaic_25cm_Eqc_latTs0_lon0_first.tif",
+      "license": "Public domain (USGS/NASA)",
+      "credit": "NASA/JPL/University of Arizona; USGS Astrogeology",
+      "processing": "window read, reprojected (average) to 2 m, contrast stretch -> basemap.png"
+    },
+    {
+      "name": "CTX DTM (Mars 2020 TRN), backup",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/mars2020_trn/CTX/JEZ_ctx_B_soc_008_DTM_MOLAtopography_DeltaGeoid_20m_Eqc_latTs0_lon0.tif",
+      "license": "Public domain (USGS/NASA)",
+      "credit": "NASA/JPL/MSSS; USGS Astrogeology",
+      "processing": "habitat flatness pre-screen and QA hillshade"
+    },
+    {
+      "name": "Stack et al. 2020, Photogeologic Map of the Perseverance Rover Field Site",
+      "url": "https://doi.org/10.1007/s11214-020-00739-x",
+      "license": "CC-BY-4.0",
+      "credit": "Stack, K. M., et al. (2020), Space Science Reviews 216:127",
+      "processing": "rasterized to 2 m: sand (bedforms), rocky units, geologic units"
+    },
+    {
+      "name": "CRISM dominant mineralogy of Jezero",
+      "url": "https://zenodo.org/records/5575824",
+      "license": "CC-BY-4.0",
+      "credit": "Parente, M., Saranathan, A. M., Itoh, Y., Tarnas, J. D. (Zenodo 2021)",
+      "processing": "RGB key decoded (white = no coverage, blends = uncertain), nearest-neighbor resampled class IDs"
+    },
+    {
+      "name": "THEMIS thermal inertia of Jezero",
+      "url": "https://zenodo.org/records/4931348",
+      "license": "CC-BY-4.0",
+      "credit": "Edwards, C. S., Buz, J. (Zenodo 2021)",
+      "processing": "bilinear resample to 2 m, context layer only"
+    },
+    {
+      "name": "Mars 2020 waypoints and traverse (MMGIS)",
+      "url": "https://mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json",
+      "license": "NASA (public)",
+      "credit": "NASA/JPL-Caltech",
+      "processing": "lon/lat converted to grid pixels (easting/northing fields ignored)"
+    },
+    {
+      "name": "Mars 2020 Three Forks Depot Bundle",
+      "url": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks",
+      "license": "Public domain (PDS)",
+      "credit": "NASA/JPL-Caltech; PDS Geosciences Node",
+      "processing": "tube drop sols joined to waypoints; close-up and Mastcam-Z mosaic browse images"
+    },
+    {
+      "name": "Perseverance raw images",
+      "url": "https://mars.nasa.gov/mars2020/multimedia/raw-images/",
+      "license": "NASA (public, credit required)",
+      "credit": "NASA/JPL-Caltech (Mastcam-Z: NASA/JPL-Caltech/ASU)",
+      "processing": "filtered (color full frames, no sky/deck), URL and content checked"
+    },
+    {
+      "name": "MEDA (Mars 2020)",
+      "url": "https://pds-atmospheres.nmsu.edu/PDS/data/PDS4/Mars2020/mars2020_meda",
+      "license": "Public domain (PDS)",
+      "credit": "NASA/JPL-Caltech/CAB; PDS Atmospheres Node",
+      "processing": "depot-season sols: ATS air temp, TIRS ground temp, pressure, humidity, tide-based dust estimate"
+    },
+    {
+      "name": "MSL RAD RDR",
+      "url": "https://pds-ppi.igpp.ucla.edu/data/MSL-M-RAD-3-RDR-V1.0/DATA",
+      "license": "Public domain (PDS)",
+      "credit": "NASA/JPL-Caltech/SwRI; PDS PPI Node",
+      "processing": "total dose E and B on depot-campaign Earth dates (stand-in for Jezero)"
+    },
+    {
+      "name": "DONKI WSA-ENLIL simulations",
+      "url": "https://api.nasa.gov/DONKI",
+      "license": "NASA (public)",
+      "credit": "NASA CCMC / M2M Space Weather Analysis Office",
+      "processing": "CME arrivals predicted at Mars, last 30 days and upcoming"
+    },
+    {
+      "name": "JPL Mars Trek",
+      "url": "https://trek.nasa.gov/mars/",
+      "license": "NASA (public)",
+      "credit": "NASA/JPL-Caltech",
+      "processing": "zoomed-out context layers in the app"
+    }
+  ],
+  "downloaded_files": {
+    "raw/themis/Jezero_Thermal_Inertia_v1.tiff": {
+      "url": "https://zenodo.org/api/records/4931348/files/Jezero_Thermal_Inertia_v1.tiff/content",
+      "bytes": 1721889,
+      "sha256": "84401e7717d43ae80cbd80213b91bd141ee48197eb8648293197447c43c2829c",
+      "verified": "md5",
+      "fetched_utc": "2026-11-14T23:03:23+00:00"
+    },
+    "raw/crism/Jezero_readme.pdf": {
+      "url": "https://zenodo.org/api/records/5575824/files/Jezero_readme.pdf/content",
+      "bytes": 292772,
+      "sha256": "0b7abde80affbdd8d36c276c101f8e8e20cb75042029027014265c05886b8183",
+      "verified": "md5",
+      "fetched_utc": "2026-11-14T23:03:24+00:00"
+    },
+    "raw/crism/mineralSpectra_mapped_v2.sli": {
+      "url": "https://zenodo.org/api/records/5575824/files/mineralSpectra_mapped_v2.sli/content",
+      "bytes": 19760,
+      "sha256": "9341ff41ef6368e149c107bb1f328dada9b37acff4fdd90ae58fc3f6b8ed7beb",
+      "verified": "md5",
+      "fetched_utc": "2026-11-14T23:03:24+00:00"
+    },
+    "raw/crism/mineralSpectra_mapped_v2.sli.hdr": {
+      "url": "https://zenodo.org/api/records/5575824/files/mineralSpectra_mapped_v2.sli.hdr/content",
+      "bytes": 3234,
+      "sha256": "849b5e80ee31c13f98130878aacd580b7bbdab0c6e2282b3a6fbf9a70f5ea95e",
+      "verified": "md5",
+      "fetched_utc": "2026-11-14T23:03:24+00:00"
+    },
+    "raw/crism/jezeroFinal.tif": {
+      "url": "https://zenodo.org/api/records/5575824/files/jezeroFinal.tif/content",
+      "bytes": 1389881,
+      "sha256": "53a35f0e73e26bedbd1e332916e0ec23502f76f3927015546bfff607d0a47ebe",
+      "verified": "md5",
+      "fetched_utc": "2026-11-14T23:03:24+00:00"
+    },
+    "raw/crism/jezeroEM.png": {
+      "url": "https://zenodo.org/api/records/5575824/files/jezeroEM.png/content",
+      "bytes": 79999,
+      "sha256": "ad93b03b98dea009e249945dd4099c1b5b163a80c5f19645fa1ff02ca7b7bdbb",
+      "verified": "md5",
+      "fetched_utc": "2026-11-14T23:03:25+00:00"
+    },
+    "raw/stack/11214_2020_739_MOESM3_ESM.zip": {
+      "url": "https://authors.library.caltech.edu/api/records/a7qs5-xhq84/files/11214_2020_739_MOESM3_ESM.zip/content",
+      "bytes": 3476604,
+      "sha256": "970e4c78ae6dc689c99e46eddb4be184704a56952008d0558f643e816e29b118",
+      "verified": "md5",
+      "fetched_utc": "2026-11-14T23:03:25+00:00"
+    },
+    "raw/m20/M20_waypoints.json": {
+      "url": "https://mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json",
+      "bytes": 603126,
+      "sha256": "bd143ee69241229926abd373e6305b8bbb326d6b5a7b4a8d6935262696f93dc4",
+      "verified": "structure",
+      "fetched_utc": "2026-11-14T23:03:25+00:00"
+    },
+    "raw/m20/M20_traverse.json": {
+      "url": "https://mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_traverse.json",
+      "bytes": 1723218,
+      "sha256": "6ddd0ece913d75b45d105946082f95ed84e68f4718b68d32a4421dc30877e7e6",
+      "verified": "structure",
+      "fetched_utc": "2026-11-14T23:03:26+00:00"
+    },
+    "raw/depot/sample_drop_timestamps.csv": {
+      "url": "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/data/sample_drop_events/sample_drop_timestamps.csv",
+      "bytes": 539,
+      "sha256": "afdf6515ed007e211cd7503a455a66c620fcdb457e3f10da886a40defc61262c",
+      "verified": "structure",
+      "fetched_utc": "2026-11-14T23:03:26+00:00"
+    },
+    "raw/ctx/JEZ_ctx_B_soc_008_DTM_MOLAtopography_DeltaGeoid_20m_Eqc_latTs0_lon0.tif": {
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/mars2020_trn/CTX/JEZ_ctx_B_soc_008_DTM_MOLAtopography_DeltaGeoid_20m_Eqc_latTs0_lon0.tif",
+      "bytes": 9662387,
+      "sha256": "16a1aa66c3f48c1bca252795827db7b417876217aff0f5e1aff18027fab2327b",
+      "verified": "structure",
+      "fetched_utc": "2026-11-14T23:03:26+00:00"
+    }
+  },
+  "literature": [
+    "Lunar traverse planning guideline (traverses on slopes < 20 deg), Pena-Asensio et al. 2023, Acta Astronautica, doi:10.1016/j.actaastro.2023.10.010, as quoted in Universe Today / phys.org (Oct 2023)",
+    "ASSUMPTION: start of the 'slow, careful' band below the 20 deg hard limit",
+    "ASSUMPTION: ~0.5 m of local relief within 8 m is treated as a blocky field a suited crew should avoid",
+    "Apollo 15 crew average walking speed rose from ~1 km/h (EVA 1) to ~2 km/h (EVA 2), Apollo Lunar Surface Journal, NASA (https://www.nasa.gov/wp-content/uploads/static/history/alsj/a11/a11.gaits.html)",
+    "Apollo planners assumed 2.7 km/h for walkbacks longer than an hour (3.6 km/h for one hour), Apollo Lunar Surface Journal, NASA",
+    "Shape of Tobler's hiking function (Tobler 1993, NCGIA Technical Report 93-1), normalized to v_flat; ASSUMPTION that the Earth hiking shape applies to suited walking on Mars",
+    "ASSUMPTION: small bedforms (ripples) slow walking ~15%",
+    "ASSUMPTION: large bedforms (ripple ridges, soft crests) slow walking ~40%",
+    "ASSUMPTION: blocky/talus units slow walking ~25%",
+    "xEMU designed for EVAs up to 8 h (6 +/- 2 h), NASA Lunar Surface EVA Concept of Operations (2020), https://www.nasa.gov/wp-content/uploads/2020/01/topic_1-_eva_lunar_surface_concept_of_operations.pdf",
+    "Legacy EMU: 8 h primary life support + 30 min backup life support (NASA EMU documentation; summarized on Wikipedia 'Extravehicular Mobility Unit')",
+    "Apollo planners treated a ~5 h time-in-suit limit as the main constraint on rover-assisted traverses, NTRS 19700009560 (https://ntrs.nasa.gov/api/citations/19700009560/downloads/19700009560.pdf)",
+    "~10 km max excursion a suited crew could walk back from after a rover failure (https://core.ac.uk/works/15254764)",
+    "ASSUMPTION: observe, photograph, and sample one outcrop",
+    "ASSUMPTION: ~4 min per tube for 10 tubes, loaded onto the rover",
+    "Wilson et al. 2008 / Sanchez-Lavega et al. 2023, JGR Planets, doi:10.1029/2022JE007480 (dust from pressure tide)",
+    "Hassler et al. 2014, Science 343, doi:10.1126/science.1244797 (RAD surface dose reference)"
+  ],
+  "ai_use": "Pipeline code written with AI assistance (Claude); all data values come from the listed NASA and USGS sources, and every processing step is in pipeline/."
+}

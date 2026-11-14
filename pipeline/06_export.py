@@ -111,6 +111,8 @@ def main():
     (C.DATA / "safety_params.json").write_text(json.dumps({"params": P.PARAMS, "mars_g": P.MARS_G,
                                                            "assumptions": P.assumptions()}, indent=2, ensure_ascii=False))
     connectivity(nogo)
+    traverse_check(g, nogo)
+    provenance()
     sz = (C.DATA / "grids.npz").stat().st_size
     print(f"wrote {len(layers)} overlays, layers.json, grids.npz ({sz/1e6:.1f} MB), no-go {nogo.mean():.1%}")
 
@@ -126,6 +128,71 @@ def connectivity(nogo):
     assert 0 not in ids.values(), f"a stop is on a no-go cell: {ids}"
     assert len(set(ids.values())) == 1, f"stops are not connected: {ids}"
     print(f"connectivity: habitat, stop A and all {len(pts) - 2} tubes are in one walkable region")
+
+
+def traverse_check(g, nogo):
+    """QA: Perseverance drove these paths, so very few of its path cells should be no-go."""
+    tr = json.loads((C.RAW / "m20" / "M20_traverse.json").read_text())["features"]
+    hits = tot = 0
+    for f in tr:
+        lon, lat = map(np.array, zip(*[q[:2] for q in f["geometry"]["coordinates"]]))
+        # densify to ~1 m so we test the cells the rover actually crossed
+        c, r = g.lonlat_to_px(lon, lat)
+        for i in range(len(c) - 1):
+            n = max(int(np.hypot(c[i + 1] - c[i], r[i + 1] - r[i]) * 2), 1)
+            cc, rr = np.linspace(c[i], c[i + 1], n), np.linspace(r[i], r[i + 1], n)
+            m = (cc >= 0) & (cc < g.n) & (rr >= 0) & (rr < g.n)
+            tot += m.sum(); hits += nogo[rr[m].astype(int), cc[m].astype(int)].sum()
+    frac = hits / max(tot, 1)
+    out = {"rover_path_samples_in_box": int(tot), "on_nogo_frac": round(float(frac), 4)}
+    (C.QA / "traverse_check.json").write_text(json.dumps(out, indent=2))
+    print(f"traverse check: {frac:.2%} of Perseverance's path cells in the box are no-go")
+    assert frac < 0.05, "no-go mask disagrees with where the rover actually drove"
+
+
+SOURCES = [
+    ("HiRISE DTM mosaic (Mars 2020 TRN)", C.HIRISE_DTM_URL, "Public domain (USGS/NASA)",
+     "NASA/JPL/University of Arizona; USGS Astrogeology (Mars 2020 TRN products)",
+     "window read for the box, reprojected to local true-scale grid, smoothed, slope/roughness/no-go"),
+    ("HiRISE orthomosaic 25 cm (Mars 2020 TRN)", C.HIRISE_ORTHO_URL, "Public domain (USGS/NASA)",
+     "NASA/JPL/University of Arizona; USGS Astrogeology", "window read, reprojected (average) to 2 m, contrast stretch -> basemap.png"),
+    ("CTX DTM (Mars 2020 TRN), backup", C.CTX_DTM_URL, "Public domain (USGS/NASA)", "NASA/JPL/MSSS; USGS Astrogeology",
+     "habitat flatness pre-screen and QA hillshade"),
+    ("Stack et al. 2020, Photogeologic Map of the Perseverance Rover Field Site", "https://doi.org/10.1007/s11214-020-00739-x",
+     "CC-BY-4.0", "Stack, K. M., et al. (2020), Space Science Reviews 216:127",
+     "rasterized to 2 m: sand (bedforms), rocky units, geologic units"),
+    ("CRISM dominant mineralogy of Jezero", "https://zenodo.org/records/5575824", "CC-BY-4.0",
+     "Parente, M., Saranathan, A. M., Itoh, Y., Tarnas, J. D. (Zenodo 2021)",
+     "RGB key decoded (white = no coverage, blends = uncertain), nearest-neighbor resampled class IDs"),
+    ("THEMIS thermal inertia of Jezero", "https://zenodo.org/records/4931348", "CC-BY-4.0", "Edwards, C. S., Buz, J. (Zenodo 2021)",
+     "bilinear resample to 2 m, context layer only"),
+    ("Mars 2020 waypoints and traverse (MMGIS)", C.M20_WAYPOINTS_URL, "NASA (public)", "NASA/JPL-Caltech",
+     "lon/lat converted to grid pixels (easting/northing fields ignored)"),
+    ("Mars 2020 Three Forks Depot Bundle", C.DEPOT_BUNDLE, "Public domain (PDS)", "NASA/JPL-Caltech; PDS Geosciences Node",
+     "tube drop sols joined to waypoints; close-up and Mastcam-Z mosaic browse images"),
+    ("Perseverance raw images", "https://mars.nasa.gov/mars2020/multimedia/raw-images/", "NASA (public, credit required)",
+     "NASA/JPL-Caltech (Mastcam-Z: NASA/JPL-Caltech/ASU)", "filtered (color full frames, no sky/deck), URL and content checked"),
+    ("MEDA (Mars 2020)", C.MEDA_ROOT, "Public domain (PDS)", "NASA/JPL-Caltech/CAB; PDS Atmospheres Node",
+     "depot-season sols: ATS air temp, TIRS ground temp, pressure, humidity, tide-based dust estimate"),
+    ("MSL RAD RDR", C.RAD_ROOT, "Public domain (PDS)", "NASA/JPL-Caltech/SwRI; PDS PPI Node",
+     "total dose E and B on depot-campaign Earth dates (stand-in for Jezero)"),
+    ("DONKI WSA-ENLIL simulations", C.DONKI_ROOT, "NASA (public)", "NASA CCMC / M2M Space Weather Analysis Office",
+     "CME arrivals predicted at Mars, last 30 days and upcoming"),
+    ("JPL Mars Trek", "https://trek.nasa.gov/mars/", "NASA (public)", "NASA/JPL-Caltech", "zoomed-out context layers in the app"),
+]
+
+
+def provenance():
+    manifest = json.loads((C.RAW / "manifest.json").read_text())
+    (C.DATA / "provenance.json").write_text(json.dumps({
+        "sources": [{"name": n, "url": u, "license": l, "credit": c, "processing": p} for n, u, l, c, p in SOURCES],
+        "downloaded_files": manifest,
+        "literature": [P.PARAMS[k]["source"] for k in P.PARAMS] + [
+            "Wilson et al. 2008 / Sanchez-Lavega et al. 2023, JGR Planets, doi:10.1029/2022JE007480 (dust from pressure tide)",
+            "Hassler et al. 2014, Science 343, doi:10.1126/science.1244797 (RAD surface dose reference)"],
+        "ai_use": "Pipeline code written with AI assistance (Claude); all data values come from the listed NASA and USGS "
+                  "sources, and every processing step is in pipeline/."}, indent=2, ensure_ascii=False))
+    print("wrote data/provenance.json")
 
 
 if __name__ == "__main__":
