@@ -1,0 +1,153 @@
+/* hud.css — owned by hud.js (full-screen helmet HUD inside #hud).
+   Everything is scoped under #hud. Colors come from style.css tokens. */
+
+#hud.hud-root {
+  --hud-accent: var(--hud-fg);
+  --hud-line: color-mix(in srgb, var(--hud-fg) 55%, transparent);
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 50% 40%, #0b1513 0%, var(--hud-bg) 70%);
+  font-family: var(--mono);
+  user-select: none;
+}
+#hud.hud-root[hidden] { display: none !important; }
+#hud[data-level="warn"] { --hud-accent: var(--warn); }
+#hud[data-level="danger"] { --hud-accent: var(--danger); }
+
+#hud .hud-svg { width: 100%; height: 100%; display: block; }
+
+/* ---------- text ---------- */
+#hud .hud-t { fill: var(--hud-fg); font-family: var(--mono); letter-spacing: 0.02em; }
+#hud .hud-clock { font-size: 34px; font-weight: 700; }
+#hud .hud-status { font-size: 19px; fill: var(--hud-fg); opacity: 0.85; }
+#hud .hud-label { font-size: 17px; fill: var(--hud-dim); font-weight: 700; letter-spacing: 0.14em; }
+#hud .hud-next { font-size: 34px; font-weight: 700; }
+#hud .hud-big { font-size: 84px; font-weight: 800; }
+#hud .hud-huge { font-size: 96px; font-weight: 800; }
+#hud .hud-unit { font-size: 24px; fill: var(--hud-dim); font-weight: 400; }
+#hud .hud-sub { font-size: 19px; }
+#hud .hud-tiny { font-size: 15px; fill: var(--hud-dim); }
+#hud .hud-foot { font-size: 14px; fill: var(--hud-dim); }
+#hud .hud-bearing { font-size: 30px; font-weight: 700; }
+#hud .hud-tag { font-size: 17px; font-weight: 700; }
+#hud .hud-tag-warn, #hud .hud-lv-warn { fill: var(--warn); }
+#hud .hud-lv-ok { fill: var(--ok); }
+#hud .hud-lv-danger { fill: var(--danger); }
+#hud .hud-lv-info { fill: var(--info); }
+
+/* ---------- frame ---------- */
+#hud .hud-visor { fill: none; stroke: var(--hud-line); stroke-width: 2; opacity: 0.35; }
+#hud .hud-bracket { fill: none; stroke: var(--hud-accent); stroke-width: 4; stroke-linecap: round; }
+#hud .hud-fake rect { fill: none; stroke: var(--warn); stroke-width: 2; stroke-dasharray: 6 4; }
+#hud .hud-fake text { fill: var(--warn); font-size: 17px; font-weight: 700; }
+
+/* ---------- banner ---------- */
+#hud .hud-banner-bg { stroke-width: 3; }
+#hud .hud-banner-bg.hud-lv-info { fill: color-mix(in srgb, var(--info) 18%, #000); stroke: var(--info); }
+#hud .hud-banner-bg.hud-lv-ok { fill: color-mix(in srgb, var(--ok) 18%, #000); stroke: var(--ok); }
+#hud .hud-banner-bg.hud-lv-warn { fill: color-mix(in srgb, var(--warn) 22%, #000); stroke: var(--warn); }
+#hud .hud-banner-bg.hud-lv-danger { fill: color-mix(in srgb, var(--danger) 30%, #000); stroke: var(--danger); }
+#hud .hud-banner[data-level="danger"] .hud-banner-bg { animation: hud-pulse 1.1s ease-in-out infinite; }
+#hud .hud-banner-title { font-size: 25px; font-weight: 800; fill: #fff; letter-spacing: 0.06em; }
+#hud .hud-banner-text { font-size: 18px; fill: #f3e9e1; }
+
+/* ---------- compass / arrow ---------- */
+#hud .hud-ring { fill: none; stroke: var(--hud-line); stroke-width: 3; }
+#hud .hud-ring-inner { stroke-width: 1; opacity: 0.4; }
+#hud .hud-tick { stroke: var(--hud-dim); stroke-width: 2; }
+#hud .hud-tick-major { stroke: var(--hud-fg); stroke-width: 4; }
+#hud .hud-cardinal { font-size: 26px; font-weight: 800; fill: var(--hud-dim); }
+#hud .hud-cardn { fill: var(--hud-fg); }
+#hud .hud-heading { fill: var(--hud-fg); opacity: 0.7; }
+#hud .hud-homemark { fill: none; stroke: var(--stop-base); stroke-width: 3; }
+#hud .hud-homemark-t { font-size: 15px; font-weight: 800; fill: var(--stop-base); }
+#hud .hud-arrow path { transition: fill 0.3s; stroke: #000; stroke-width: 2; stroke-linejoin: round; }
+#hud .hud-arrow-next { fill: var(--hud-fg); }
+#hud .hud-arrow-home { fill: var(--danger); }
+
+/* ---------- air bar ---------- */
+#hud .hud-bar-bg { fill: #0f1a17; stroke: var(--hud-line); stroke-width: 2; }
+#hud .hud-bar-reserve { fill: color-mix(in srgb, var(--warn) 22%, transparent); }
+#hud .hud-bar-fill { fill: var(--ok); }
+#hud .hud-bar-fill.hud-fill-warn { fill: var(--warn); }
+#hud .hud-bar-fill.hud-fill-danger { fill: var(--danger); }
+#hud .hud-bar-need { stroke: var(--warn); stroke-width: 4; }
+
+/* ---------- mini map ---------- */
+#hud .hud-mini-bg { fill: #050a09; stroke: var(--hud-line); stroke-width: 2; }
+#hud .hud-mini-img { opacity: 0.42; filter: grayscale(0.5) brightness(0.9); }
+#hud .hud-mini-hit { cursor: pointer; }
+#hud .hud-mini svg polyline { fill: none; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+#hud .hud-m-alt polyline { stroke: var(--route-alt); stroke-width: 1.5; opacity: 0.55; fill: none; vector-effect: non-scaling-stroke; }
+#hud .hud-m-active { stroke: var(--hud-fg); stroke-width: 3.5; }
+#hud .hud-m-active-alt { stroke: var(--route-active); }
+#hud .hud-m-active-home { stroke: var(--route-home); }
+#hud .hud-m-proposed { stroke: var(--route-proposed); stroke-width: 4; stroke-dasharray: 8 6; animation: hud-dash 0.8s linear infinite; }
+#hud .hud-m-home { stroke: var(--route-home); stroke-width: 3; stroke-dasharray: 3 5; }
+#hud .hud-m-trail { stroke: #fff; stroke-width: 2; opacity: 0.6; }
+#hud .hud-m-stop circle { stroke: #000; stroke-width: 2; vector-effect: non-scaling-stroke; }
+#hud .hud-m-stop text { fill: #000; font-weight: 800; }
+#hud .hud-m-stop-base circle { fill: var(--stop-base); }
+#hud .hud-m-stop-science circle { fill: var(--stop-science); }
+#hud .hud-m-stop-depot circle { fill: var(--stop-depot); }
+#hud .hud-m-stop-other circle { fill: var(--text-dim); }
+#hud .hud-m-next circle { stroke: #fff; stroke-width: 3; }
+#hud .hud-m-visited circle { opacity: 0.6; }
+#hud .hud-m-dropped circle { fill: #555 !important; opacity: 0.6; }
+#hud .hud-m-dropped text { text-decoration: line-through; }
+#hud .hud-m-rover rect { fill: var(--rover); stroke: #000; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+#hud .hud-m-rover-off rect { fill: #6b5a20; opacity: 0.6; }
+#hud .hud-m-unc { fill-opacity: 0.12; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+#hud .hud-m-dot { stroke: #000; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+#hud .hud-m-crew-1 .hud-m-dot, #hud .hud-m-crew-1 .hud-m-unc { fill: var(--crew-1); stroke: var(--crew-1); }
+#hud .hud-m-crew-2 .hud-m-dot, #hud .hud-m-crew-2 .hud-m-unc { fill: var(--crew-2); stroke: var(--crew-2); }
+#hud .hud-m-crew .hud-m-dot { stroke: #000; }
+#hud.hud-suitonly .hud-m-unc { stroke-dasharray: 4 3; fill-opacity: 0.2; }
+#hud .hud-lg-crew1 { fill: var(--crew-1); }
+#hud .hud-lg-crew2 { fill: var(--crew-2); }
+#hud .hud-lg-rover { fill: var(--rover); }
+#hud .hud-lg-prop { fill: var(--route-proposed); }
+#hud .hud-lg-home { fill: var(--route-home); }
+
+/* ---------- route strip ---------- */
+#hud .hud-strip-base { stroke: var(--hud-dim); stroke-width: 6; stroke-linecap: round; }
+#hud .hud-strip-done { stroke: var(--hud-fg); stroke-width: 6; stroke-linecap: round; }
+#hud .hud-strip-stop circle { stroke: #000; stroke-width: 2; }
+#hud .hud-strip-stop text { font-size: 17px; font-weight: 800; fill: #000; }
+#hud .hud-strip-stop text.hud-tiny { fill: var(--hud-dim); font-weight: 400; font-size: 14px; }
+#hud .hud-strip-me path { fill: var(--crew-1); stroke: #000; stroke-width: 2; }
+
+/* ---------- replan card (HTML) ---------- */
+#hud .hud-card {
+  position: absolute; left: 50%; bottom: 7%; transform: translateX(-50%);
+  width: min(760px, 92vw); max-height: 60%; overflow: auto;
+  background: rgba(6, 16, 26, 0.94); border: 3px solid var(--route-proposed); border-radius: 16px;
+  padding: 16px 20px; color: var(--text); font-family: var(--mono); box-shadow: 0 0 40px rgba(108, 180, 238, 0.35);
+  font-size: 16px;
+}
+#hud .hud-card[hidden] { display: none; }
+#hud .hud-card[data-trigger="storm"], #hud .hud-card[data-trigger="air"] { border-color: var(--danger); box-shadow: 0 0 40px rgba(239, 90, 76, 0.4); }
+#hud .hud-card-head { font-size: 15px; letter-spacing: 0.14em; color: var(--route-proposed); font-weight: 800; }
+#hud .hud-card[data-trigger="storm"] .hud-card-head, #hud .hud-card[data-trigger="air"] .hud-card-head { color: var(--danger); }
+#hud .hud-card-label { font-size: 26px; font-weight: 800; margin: 4px 0 6px; color: #fff; }
+#hud .hud-card-meta { color: var(--warn); font-weight: 700; margin-bottom: 6px; }
+#hud .hud-card-why { margin: 4px 0 8px; padding-left: 20px; color: var(--text-dim); }
+#hud .hud-card-safe { color: var(--ok); font-weight: 700; margin-bottom: 6px; }
+#hud .hud-card-safe.hud-lv-danger { color: var(--danger); fill: none; }
+#hud .hud-card-rej { color: var(--text-faint); font-size: 13px; margin-bottom: 8px; }
+#hud .hud-card-btn {
+  display: block; width: 100%; padding: 14px; margin-top: 6px; cursor: pointer;
+  font: 800 22px/1 var(--mono); letter-spacing: 0.08em; color: #001018;
+  background: var(--route-proposed); border: 0; border-radius: 10px;
+}
+#hud .hud-card[data-trigger="storm"] .hud-card-btn, #hud .hud-card[data-trigger="air"] .hud-card-btn { background: var(--danger); color: #fff; }
+#hud .hud-card-btn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+
+/* ---------- states / animation ---------- */
+#hud.hud-storm { background: radial-gradient(ellipse at 50% 40%, #2a0d0a 0%, var(--hud-bg) 75%); }
+#hud.hud-flash { animation: hud-flash 0.9s ease-out 2; }
+@keyframes hud-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@keyframes hud-dash { to { stroke-dashoffset: -28; } }
+@keyframes hud-flash { 0% { box-shadow: inset 0 0 0 0 transparent; } 30% { box-shadow: inset 0 0 120px 10px rgba(108, 180, 238, 0.55); } 100% { box-shadow: inset 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) {
+  #hud *, #hud.hud-flash { animation: none !important; transition: none !important; }
+}

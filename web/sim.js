@@ -1,0 +1,1125 @@
+// sim.js — sim engine. Owner: sim agent (sim.js only, no DOM, no CSS). Contract: INTERFACES.md "sim.js".
+// The ONLY writer of state.sim. initSim sets a complete state.sim synchronously.
+//
+// Layout:
+//   1. Pure core (exported, unit-tested in web/tests/sim.test.mjs): path timing, stop marks,
+//      the replan rule, route surgery (slice / strip work / backtrack / concat).
+//   2. initSim(ctx): mutable sim-internal state S, the step function, fault handling,
+//      replan proposals, and publish() which writes one fresh state.sim object per frame.
+
+import {
+  clamp, lerp, distPx, distM, cumulativeDistM, searchSorted, interpolateOnPath, interpolateArray,
+  distanceAt, positionAtDistance, bearingDeg, fmtMin,
+} from './util.js';
+
+const EPS = 1e-9;
+
+// ===========================================================================
+// 1. Pure core
+// ===========================================================================
+
+export function samePx(a, b) {
+  return !!a && !!b && a[0] === b[0] && a[1] === b[1];
+}
+
+/** Position on a path at time t (planned clock). Repeated points hold still. */
+export function positionAt(path, tMin, t) {
+  return interpolateOnPath(path, tMin, t);
+}
+
+/** Segment index i (path[i] -> path[i+1]) that contains time t, in [0, n-2]. */
+export function segmentIndexAt(tMin, t) {
+  const n = tMin.length;
+  if (n < 2) return 0;
+  return clamp(searchSorted(tMin, t), 0, n - 2);
+}
+
+/**
+ * Wall-clock minutes needed to advance the route clock from `fromT` to `toT` when walking
+ * segments run at `pace` (work segments, i.e. repeated points, always run at 1x).
+ */
+export function pacedDuration(path, tMin, fromT, toT, pace = 1) {
+  if (!(toT > fromT)) return 0;
+  const p = pace > 0 ? pace : 1;
+  let sum = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = Math.max(fromT, tMin[i]);
+    const b = Math.min(toT, tMin[i + 1]);
+    if (b <= a) continue;
+    sum += samePx(path[i], path[i + 1]) ? b - a : (b - a) / p;
+  }
+  return sum;
+}
+
+/** Total work (stationary) minutes in a route between route times fromT and toT. */
+export function workMinutes(path, tMin, fromT = -Infinity, toT = Infinity) {
+  let sum = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    if (!samePx(path[i], path[i + 1])) continue;
+    const a = Math.max(fromT, tMin[i]);
+    const b = Math.min(toT, tMin[i + 1]);
+    if (b > a) sum += b - a;
+  }
+  return sum;
+}
+
+/**
+ * Find each stop of `stopIds` on `path`, in order. Returns
+ * [{ id, pathIndex, departIndex, arriveMin, departMin }] where pathIndex is the first vertex at the
+ * stop and departIndex the last vertex of the repeated (work) run. Matching is exact px, else the
+ * nearest vertex at or after the previous stop.
+ */
+export function buildStopMarks(path, tMin, stopIds, stopPx) {
+  const marks = [];
+  let cursor = 0;
+  for (const id of stopIds) {
+    const px = stopPx(id);
+    if (!px || !path.length) continue;
+    let idx = -1;
+    for (let j = cursor; j < path.length; j++) {
+      if (distPx(path[j], px) <= 1.5) { idx = j; break; }
+    }
+    if (idx < 0) {
+      let bd = Infinity;
+      for (let j = cursor; j < path.length; j++) {
+        const d = distPx(path[j], px);
+        if (d < bd) { bd = d; idx = j; }
+      }
+    }
+    if (idx < 0) continue;
+    let dep = idx;
+    while (dep + 1 < path.length && samePx(path[dep + 1], path[idx])) dep++;
+    marks.push({ id, pathIndex: idx, departIndex: dep, arriveMin: tMin[idx], departMin: tMin[dep] });
+    cursor = dep + 1;
+  }
+  return marks;
+}
+
+/**
+ * The routes.json replan rule. Options are ordered planned -> skip_work -> drop -> abort.
+ * Take the first option where T + minutes + reserve <= budget AND (air check) minutes * burn + reserve <= airLeft.
+ * `durationOf(option)` (optional) replaces option.minutes, e.g. with the duration at the current pace.
+ * If none fits, take the abort option (or null when the entry has none).
+ * Returns { option, index, fits, trigger: 'schedule'|'air', rejected: [{ option, projectedReturnT, overByMin, failed }] }.
+ */
+export function chooseReplanOption(options, T, budgetMin, reserveMin, { burnFactor = 1, airLeftMin = Infinity, durationOf = null } = {}) {
+  const rejected = [];
+  let airFailed = false;
+  for (let k = 0; k < (options || []).length; k++) {
+    const o = options[k];
+    // durationOf lets the sim stretch option minutes to the crew's actual pace (default: planned minutes)
+    const d = durationOf ? durationOf(o) : o.minutes;
+    const projectedReturnT = T + d;
+    const timeOk = projectedReturnT + reserveMin <= budgetMin + EPS;
+    const airOk = d * burnFactor + reserveMin <= airLeftMin + EPS;
+    if (timeOk && airOk) {
+      return { option: o, index: k, fits: true, trigger: airFailed ? 'air' : 'schedule', rejected };
+    }
+    if (timeOk && !airOk) airFailed = true;
+    const overTime = projectedReturnT + reserveMin - budgetMin;
+    const overAir = d * burnFactor + reserveMin - airLeftMin;
+    rejected.push({ option: o, projectedReturnT, overByMin: Math.max(overTime, overAir), failed: timeOk ? 'air' : 'time' });
+  }
+  const k = (options || []).findIndex((o) => o.kind === 'abort' || o.abort === true);
+  const trigger = airFailed ? 'air' : 'schedule';
+  if (k >= 0) {
+    return { option: options[k], index: k, fits: false, trigger, rejected: rejected.filter((r) => r.option !== options[k]) };
+  }
+  return { option: null, index: -1, fits: false, trigger, rejected };
+}
+
+/**
+ * Replan entry for a stop: in any variant, the entry whose options[0].stops equals the stops still
+ * ahead (starting with this stop); else the entry of `fallbackVariantId` at that stop; else null.
+ */
+export function findReplanEntry(variants, stopId, remainingStops, fallbackVariantId) {
+  const eq = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]);
+  for (const v of variants || []) {
+    for (const r of v.replan || []) {
+      if (r.at === stopId && eq(r.options?.[0]?.stops, remainingStops)) return { variantId: v.id, entry: r };
+    }
+  }
+  const fb = (variants || []).find((v) => v.id === fallbackVariantId);
+  const r = fb?.replan?.find((e) => e.at === stopId);
+  return r ? { variantId: fb.id, entry: r } : null;
+}
+
+/** Remove work (repeated points) from a route, shifting later times earlier. */
+export function stripWork(path, tMin, homeMin) {
+  if (!path.length) return { path: [], tMin: [], homeMin: [] };
+  const P = [path[0]], T = [tMin[0]], H = [homeMin ? homeMin[0] : 0];
+  let shift = 0;
+  for (let j = 1; j < path.length; j++) {
+    if (samePx(path[j], path[j - 1])) { shift += tMin[j] - tMin[j - 1]; continue; }
+    P.push(path[j]); T.push(tMin[j] - shift); H.push(homeMin ? homeMin[j] : 0);
+  }
+  return { path: P, tMin: T, homeMin: H };
+}
+
+/** The rest of a route from route time t, re-based so the first point is at time 0. */
+export function sliceRouteFrom(path, tMin, homeMin, t) {
+  const n = path.length;
+  if (!n) return { path: [], tMin: [], homeMin: [] };
+  const p = interpolateOnPath(path, tMin, t);
+  const t0 = clamp(t, tMin[0], tMin[n - 1]);
+  const P = [p.px], T = [0], H = [homeMin ? interpolateArray(tMin, homeMin, t0) : 0];
+  if (p.atEnd) return { path: P, tMin: T, homeMin: H };
+  for (let j = p.atStart ? 1 : p.i + 1; j < n; j++) {
+    if (j === p.i + 1 && distPx(path[j], p.px) < 1e-6 && !samePx(path[p.i], path[j])) continue;
+    P.push(path[j]); T.push(Math.max(0, tMin[j] - t0)); H.push(homeMin ? homeMin[j] : 0);
+  }
+  return { path: P, tMin: T, homeMin: H };
+}
+
+/**
+ * Walk back along a route from route time t to vertex `toIndex` (e.g. the last stop's depart
+ * vertex), reusing the planned walking time of each segment (work is skipped). Time starts at 0.
+ */
+export function backtrackRoute(path, tMin, homeMin, t, toIndex) {
+  const n = path.length;
+  if (!n) return { path: [], tMin: [], homeMin: [] };
+  const p = interpolateOnPath(path, tMin, t);
+  const tc = clamp(t, tMin[0], tMin[n - 1]);
+  const P = [p.px], T = [0], H = [homeMin ? interpolateArray(tMin, homeMin, tc) : 0];
+  let acc = 0;
+  let prevPx = p.px, prevT = tc;
+  for (let j = Math.min(p.atEnd ? n - 1 : p.i, n - 1); j >= toIndex; j--) {
+    if (samePx(path[j], prevPx)) { prevT = tMin[j]; continue; }
+    acc += Math.max(0, prevT - tMin[j]);
+    P.push(path[j]); T.push(acc); H.push(homeMin ? homeMin[j] : 0);
+    prevPx = path[j]; prevT = tMin[j];
+  }
+  return { path: P, tMin: T, homeMin: H };
+}
+
+/** Concatenate two re-based routes; b's times are offset by a's end, a duplicate joint is dropped. */
+export function concatRoutes(a, b) {
+  if (!a.path.length) return b;
+  if (!b.path.length) return a;
+  const off = a.tMin[a.tMin.length - 1];
+  const skip = samePx(a.path[a.path.length - 1], b.path[0]) ? 1 : 0;
+  return {
+    path: [...a.path, ...b.path.slice(skip)],
+    tMin: [...a.tMin, ...b.tMin.slice(skip).map((x) => x + off)],
+    homeMin: [...a.homeMin, ...b.homeMin.slice(skip)],
+  };
+}
+
+/**
+ * Turn-around rule: air left <= air for the walk home + reserve + margin.
+ * Pass the walk home as AIR minutes (time home x burn rate / pace), see homeAirMin().
+ */
+export function turnaroundDue(airLeftMin, homeAirMin, reserveMin, marginMin) {
+  if (!Number.isFinite(homeAirMin)) return false;
+  return airLeftMin <= homeAirMin + reserveMin + marginMin;
+}
+
+/** Air (minutes of suit budget) the walk home uses: planned walk minutes stretched by pace, times burn rate. */
+export function homeAirMin(timeHomeMin, burnFactor = 1, pace = 1) {
+  return timeHomeMin * (burnFactor || 1) / (pace > 0 ? pace : 1);
+}
+
+/** Air level from the margin (left - home - reserve). */
+export function airLevel(marginMin, turnaroundMarginMin) {
+  if (!Number.isFinite(marginMin)) return 'warn';
+  if (marginMin <= turnaroundMarginMin) return 'danger';
+  if (marginMin < 2 * turnaroundMarginMin) return 'warn';
+  return 'ok';
+}
+
+/** Point `backM` meters behind `px` along the polyline `trail` (walked backwards from its end). */
+export function pointBehind(trail, px, backM, pixelM) {
+  let need = backM / pixelM;
+  let cur = px;
+  for (let j = trail.length - 1; j >= 0 && need > 0; j--) {
+    const d = distPx(cur, trail[j]);
+    if (d < 1e-9) continue;
+    if (d >= need) return [lerp(cur[0], trail[j][0], need / d), lerp(cur[1], trail[j][1], need / d)];
+    need -= d;
+    cur = trail[j];
+  }
+  return [...cur];
+}
+
+// ===========================================================================
+// 2. Sim engine
+// ===========================================================================
+
+export function initSim(ctx) {
+  const { data, config } = ctx;
+  const variants = data.routes.variants;
+  const pixelM = config.pixelM;
+  const H_ID = data.stopsById.H ? 'H' : (variants[0].stops?.[0] ?? 'H');
+  const stopPx = (id) => data.stopsById[id]?.px ?? data.routes.stops_px?.[id] ?? null;
+  const stopName = (id) => data.stopsById[id]?.name ?? id;
+  const homePx = stopPx(H_ID) ?? variants[0].path[0];
+  const cumCache = new WeakMap();
+  const cumOf = (a) => {
+    let c = cumCache.get(a);
+    if (!c) { c = cumulativeDistM(a.path, pixelM); cumCache.set(a, c); }
+    return c;
+  };
+
+  let S = null;          // sim-internal mutable state (arrays inside are replaced, never mutated)
+  let alertSeq = 0;
+  let homeCache = { key: '', path: null };
+
+  // Timeline of what the user did since the last hard reset, so seek() can replay it:
+  //   { t, type: 'inputs', faults, slowPace }  fault / pace toggles at sim time t
+  //   { t, type: 'confirm', trigger, atStopId, kind }  a confirmed reroute
+  let timeline = [];
+  let baseInputs = null;   // inputs in force at the hard reset (t = 0)
+  let replay = null;       // inputs override while seek() replays the timeline
+  let lastInputs = null;   // inputs the engine is currently running on
+
+  // ---------------------------------------------------------------- helpers
+  const st = () => ctx.getState();
+  const stateInputs = () => ({ faults: { ...(st().faults || {}) }, slowPace: !!st().slowPace });
+  const inputs = () => replay || stateInputs();
+  const sameInputs = (a, b) => !!a && !!b && a.slowPace === b.slowPace
+    && ['linkLost', 'highAir', 'storm'].every((k) => !!a.faults?.[k] === !!b.faults?.[k]);
+  const paceFactor = () => (inputs().slowPace ? config.slowPaceFactor : 1);
+  const burnFactor = () => (inputs().faults?.highAir ? config.highAirBurnFactor : 1);
+  const finished = () => S.status === 'done' || S.status === 'aborted';
+  const isReturnKind = (k) => k === 'abort' || k === 'return';
+
+  function variantLabel(v) {
+    const base = v.label || (v.id === 'full' ? 'Full plan' : `Plan ${v.id}`);
+    return `${base} ${(v.stops || []).join('→')}`;
+  }
+
+  function makeActive({ id, kind, label, variantId, stops, path, tMin, homeMin, why, distanceM }) {
+    const stopMarks = buildStopMarks(path, tMin, stops, stopPx);
+    return {
+      id, kind, label, variantId, stops, path, tMin, homeMin, why: why || [],
+      distanceM: distanceM ?? cumulativeDistM(path, pixelM)[path.length - 1] ?? 0,
+      stopMarks,
+    };
+  }
+
+  function activeFromVariant(v) {
+    return makeActive({
+      id: v.id, kind: 'planned', label: variantLabel(v), variantId: v.id, stops: v.stops,
+      path: v.path, tMin: v.t_min, homeMin: v.home_min, why: v.why, distanceM: v.distance_m,
+    });
+  }
+
+  function plannedVariant() {
+    return data.variantsById[S?.plannedVariantId] || data.variantsById[st().plannedVariantId] || variants[0];
+  }
+
+  function plannedArriveFor(id) {
+    if (isReturnKind(S.active.kind)) return null;
+    const sp = plannedVariant().stop_plan || [];
+    const hit = sp.slice(1).find((e) => e.id === id);
+    return hit ? hit.arrive_min : null;
+  }
+
+  function freshState(variantId) {
+    const v = data.variantsById[variantId] || variants[0];
+    const active = activeFromVariant(v);
+    return {
+      plannedVariantId: v.id,
+      t: 0, routeT: 0, status: 'idle', headingDeg: 0,
+      active, markIdx: active.stopMarks.length > 1 ? 1 : 0,
+      trail: [[...active.path[0]]],
+      visited: [], dropped: [], replans: [], alerts: [],
+      pending: null, pendingRoute: null, pendingMarkIdx: 0,
+      usedMin: 0, turnaround: false, airOutAlerted: false,
+      link: { ok: true, lostSinceT: null, linkAlertId: null },
+      storm: { on: false, alertId: null, handled: false, holdAlerted: false },
+      seeking: false,
+    };
+  }
+
+  function pushAlert(a) {
+    const al = { id: `al${++alertSeq}`, t: S.t, level: 'info', kind: 'info', title: '', text: '', active: false, ...a };
+    S.alerts = [...S.alerts, al].slice(-30);
+    ctx.emit('alert', S.seeking ? { ...al, toast: false } : al);
+    return al.id;
+  }
+  function deactivateAlerts(pred) {
+    if (!S.alerts.some((a) => a.active && pred(a))) return;
+    S.alerts = S.alerts.map((a) => (a.active && pred(a) ? { ...a, active: false } : a));
+  }
+
+  // --------------------------------------------------------- position / air
+  function locate() {
+    const a = S.active;
+    const p = interpolateOnPath(a.path, a.tMin, S.routeT);
+    const cum = cumOf(a);
+    const along = p.atEnd ? cum[cum.length - 1] : distanceAt(cum, p.i, p.frac);
+    return { p, cum, along, total: cum[cum.length - 1] || 0 };
+  }
+
+  function driftOffsetPx(crewIdx) {
+    if (S.link.ok || S.link.lostSinceT == null) return [0, 0];
+    const el = Math.max(0, S.t - S.link.lostSinceT);
+    const ang = ((S.link.lostSinceT * 137.508 + 40 + crewIdx * 23) % 360) * Math.PI / 180;
+    const r = (config.drDriftMPerMin * el) / pixelM;
+    return [Math.cos(ang) * r, Math.sin(ang) * r];
+  }
+  function uncertaintyM() {
+    if (S.link.ok || S.link.lostSinceT == null) return config.posErrM;
+    return config.posErrM + config.drGrowthMPerMin * Math.max(0, S.t - S.link.lostSinceT);
+  }
+  function displayedPx(truePx, crewIdx) {
+    const o = driftOffsetPx(crewIdx);
+    return [truePx[0] + o[0], truePx[1] + o[1]];
+  }
+
+  function timeHomeFrom(px) {
+    const g = ctx.timeHomeAt(px);
+    if (g != null && Number.isFinite(g)) return { min: g, source: 'grid' };
+    const a = S.active;
+    const r = interpolateArray(a.tMin, a.homeMin, S.routeT);
+    if (Number.isFinite(r)) return { min: r, source: 'route' };
+    return { min: NaN, source: 'none' };
+  }
+
+  /** Planned walking minutes of the way home the sim would actually send the crew on right now. */
+  function wayHomeMin() {
+    if (finished()) return 0;
+    const a = S.active;
+    if (isReturnKind(a.kind) || alreadyHeadingHome()) {
+      return Math.max(0, (a.tMin[a.tMin.length - 1] ?? 0) - S.routeT - workMinutes(a.path, a.tMin, S.routeT));
+    }
+    return bestReturn().minutes;
+  }
+
+  function airNow(ev1px) {
+    const leftMin = config.budgetMin - S.usedMin;
+    const th = timeHomeFrom(ev1px);
+    // The walk home is the slower of the time-home grid (best case from this spot) and the way
+    // home the sim can actually route (backtrack / abort route). It burns air at the current
+    // burn rate and takes longer at a slow pace.
+    const way = wayHomeMin();
+    const walkHome = Number.isFinite(th.min) ? Math.max(th.min, way) : way;
+    const homeAir = homeAirMin(walkHome, burnFactor(), paceFactor());
+    const neededMin = homeAir + config.reserveMin;
+    const marginMin = leftMin - neededMin;
+    return { leftMin, timeHomeMin: th.min, timeHomeSource: th.source, wayHomeMin: way, homeAirMin: homeAir, neededMin, marginMin };
+  }
+
+  function pushTrail(px, force = false) {
+    const last = S.trail[S.trail.length - 1];
+    if (force ? !samePx(last, px) : distPx(last, px) >= 5) S.trail = [...S.trail, [px[0], px[1]]];
+  }
+
+  // ---------------------------------------------------------- route options
+  /** Stop mark the crew is standing at right now (arrived, not yet departed), or null. */
+  function currentStopMark() {
+    const a = S.active;
+    for (let k = S.markIdx - 1; k >= 0; k--) {
+      const m = a.stopMarks[k];
+      if (m && S.routeT >= m.arriveMin - EPS && S.routeT <= m.departMin + EPS) return m;
+    }
+    if (S.routeT <= EPS && a.stopMarks[0]?.pathIndex === 0) return a.stopMarks[0];
+    return null;
+  }
+
+  function remainingStopIds() {
+    return S.active.stopMarks.slice(S.markIdx).map((m) => m.id);
+  }
+
+  function rebase(r) {
+    return { path: r.path, tMin: r.tMin.map((x) => x + S.routeT), homeMin: r.homeMin };
+  }
+
+  function abortOptionAt(stopId, remaining) {
+    const hit = findReplanEntry(variants, stopId, [stopId, ...remaining], S.active.variantId);
+    const opt = hit?.entry.options.find((o) => o.kind === 'abort' || o.abort === true);
+    return opt ? { opt, variantId: hit.variantId } : null;
+  }
+
+  /**
+   * Best way home from the crew's current spot (re-based to time 0).
+   * Returns { route, stops, why, label, via }.
+   */
+  function bestReturn() {
+    const a = S.active;
+    const remaining = remainingStopIds();
+    const stopsAhead = remaining.filter((id) => id !== H_ID);
+    // (a) the rest of the active route with remaining work removed
+    const slice = sliceRouteFrom(a.path, a.tMin, a.homeMin, S.routeT);
+    const candA = stripWork(slice.path, slice.tMin, slice.homeMin);
+    const minA = candA.tMin[candA.tMin.length - 1] ?? 0;
+    const at = currentStopMark();
+    if (at && at.id !== H_ID) {
+      const ab = abortOptionAt(at.id, remaining);
+      if (ab) {
+        const r = { path: ab.opt.path, tMin: ab.opt.t_min, homeMin: ab.opt.home_min };
+        return {
+          route: r, stops: ab.opt.stops.slice(1), minutes: ab.opt.minutes, via: 'abort',
+          label: `head home from ${stopName(at.id)}`,
+          why: [`At ${stopName(at.id)}: use the precomputed abort route home (${fmtMin(ab.opt.minutes)} walk)`, ...(ab.opt.why || []).slice(1)],
+        };
+      }
+      return {
+        route: candA, stops: remaining, minutes: minA, via: 'remainder',
+        label: `skip the remaining work, head home from ${stopName(at.id)}`,
+        why: [`At ${stopName(at.id)}: skip the remaining work and walk the planned way home (${fmtMin(minA)})`],
+      };
+    }
+    // (b) back along the walked path to the last stop, then that stop's abort route (or nothing at H)
+    const lastMark = [...a.stopMarks.slice(0, S.markIdx)].reverse().find((m) => m.arriveMin <= S.routeT + EPS) || null;
+    let candB = null, minB = Infinity, lastId = null;
+    if (lastMark) {
+      lastId = lastMark.id;
+      const back = backtrackRoute(a.path, a.tMin, a.homeMin, S.routeT, lastMark.departIndex);
+      if (lastId === H_ID) {
+        candB = back;
+      } else {
+        const ab = abortOptionAt(lastId, [...remaining]);
+        if (ab) candB = concatRoutes(back, { path: ab.opt.path, tMin: ab.opt.t_min, homeMin: ab.opt.home_min });
+      }
+      if (candB) minB = candB.tMin[candB.tMin.length - 1];
+    }
+    if (candB && minB < minA - EPS) {
+      return {
+        route: candB, stops: [H_ID], minutes: minB, via: 'backtrack',
+        label: lastId === H_ID ? `back to ${stopName(H_ID)}` : `back via ${stopName(lastId)}`,
+        why: [
+          `Back the way you came${lastId === H_ID ? '' : ` to ${stopName(lastId)}, then its abort route`}: ${fmtMin(minB)} walk`,
+          `Pressing on${stopsAhead.length ? ` via ${stopsAhead.map(stopName).join(', ')}` : ''} would take ${fmtMin(minA)}`,
+        ],
+      };
+    }
+    return {
+      route: candA, stops: remaining, minutes: minA, via: 'remainder',
+      label: stopsAhead.length ? `press on home via ${stopsAhead.map(stopName).join(', ')} (no work)` : 'continue straight home',
+      why: [
+        `Pressing on${stopsAhead.length ? ` via ${stopsAhead.map(stopName).join(', ')} without work` : ''}: ${fmtMin(minA)} walk`,
+        ...(candB ? [`Turning back${lastId ? ` via ${stopName(lastId)}` : ''} would take ${fmtMin(minB)}`] : []),
+      ],
+    };
+  }
+
+  /** True when the rest of the active route is already a work-free walk straight home. */
+  function alreadyHeadingHome() {
+    const rem = remainingStopIds().filter((id) => id !== H_ID);
+    return rem.length === 0 && workMinutes(S.active.path, S.active.tMin, S.routeT) < EPS;
+  }
+
+  /**
+   * Safety projection for a route option, at the crew's CURRENT pace and burn rate.
+   * withinBudget is false when the option eats into the reserve; airRunsOut when air hits 0 first.
+   */
+  function safetyFor(minutesPlanned, routeForPace) {
+    const pace = paceFactor();
+    const burn = burnFactor();
+    const plannedReturnT = S.t + minutesPlanned;
+    const pacedMin = routeForPace && pace !== 1
+      ? pacedDuration(routeForPace.path, routeForPace.tMin, routeForPace.tMin[0], routeForPace.tMin[routeForPace.tMin.length - 1], pace)
+      : minutesPlanned;
+    const projectedReturnT = S.t + pacedMin;
+    const leftMin = config.budgetMin - S.usedMin;
+    const airLeftAtReturnMin = leftMin - pacedMin * burn;
+    const marginMin = config.budgetMin - config.reserveMin - projectedReturnT;
+    const spare = Math.min(marginMin, airLeftAtReturnMin - config.reserveMin);
+    const withinBudget = spare >= -0.5;
+    const airRunsOut = airLeftAtReturnMin < 0;
+    let text;
+    if (withinBudget) {
+      text = `Back by ${fmtMin(projectedReturnT)} with ${Math.max(0, Math.round(spare))} min of air to spare (${config.reserveMin} min reserve kept)`;
+    } else if (airRunsOut) {
+      text = `NOT within budget: back by ${fmtMin(projectedReturnT)}, but air runs out about ${Math.round(-airLeftAtReturnMin)} min before reaching home, even using the whole ${config.reserveMin} min reserve. Best option left: go now`;
+    } else {
+      text = `NOT within budget: back by ${fmtMin(projectedReturnT)}, ${Math.round(-spare)} min into the ${config.reserveMin} min reserve. Best option left`;
+    }
+    if (pace < 1) text += `. Times are at the current slow pace (${pace}x)`;
+    if (burn > 1) text += `. Air use is ${burn}x planned`;
+    return {
+      projectedReturnT, plannedReturnT, pacedReturnT: projectedReturnT, budgetMin: config.budgetMin, reserveMin: config.reserveMin,
+      marginMin, airLeftAtReturnMin, spareMin: spare, withinBudget, airRunsOut, text,
+    };
+  }
+
+  function optionLabel(opt, stopId, entry) {
+    const name = stopName(stopId);
+    switch (opt.kind) {
+      case 'planned': return 'Continue as planned';
+      case 'skip_work': {
+        const w = entry?.options?.[0]?.work_here_min || data.stopsById[stopId]?.work_min || 0;
+        return `Skip the ${Math.round(w)}-min work at ${name}`;
+      }
+      case 'drop': {
+        const all = entry?.options?.[0]?.stops || [];
+        const gone = all.filter((s) => !opt.stops.includes(s));
+        return `Drop ${gone.map(stopName).join(', ') || 'a stop'}`;
+      }
+      case 'abort': return `Abort: home from ${name}`;
+      default: return opt.label || opt.kind;
+    }
+  }
+
+  function setPending(p, route, routeMarkIdx) {
+    if (S.pending) {
+      // a newer proposal replaces an unconfirmed one
+      deactivateAlerts((a) => a.kind === 'replan');
+    }
+    S.pending = p;
+    S.pendingRoute = route;
+    S.pendingMarkIdx = routeMarkIdx;
+    S.replans = [...S.replans, { id: p.id, t: S.t, atStopId: p.atStopId, kind: p.kind, label: p.label, confirmedT: null, trigger: p.trigger }];
+    S.status = 'awaiting_confirm';
+    ctx.emit('replan:proposed', p);
+    pushAlert({
+      level: p.trigger === 'schedule' ? 'warn' : 'danger', kind: 'replan', active: true,
+      title: `Reroute proposed: ${p.label}`,
+      text: `${p.behindMin >= 0.5 ? `${Math.round(p.behindMin)} min behind. ` : ''}${p.safety.text}. Confirm to switch.`,
+    });
+    if (st().playing) ctx.setState({ playing: false });
+  }
+
+  // ------------------------------------------------------- arrival / replan
+  function arrive(mark) {
+    S.routeT = mark.arriveMin;
+    S.markIdx += 1;
+    pushTrail(S.active.path[mark.pathIndex], true);
+    S.visited = [...S.visited, mark.id];
+    const isFinal = S.markIdx >= S.active.stopMarks.length;
+    if (isFinal) {
+      const aborted = isReturnKind(S.active.kind);
+      S.status = aborted ? 'aborted' : 'done';
+      deactivateAlerts((a) => a.kind === 'air' || a.kind === 'storm' || a.kind === 'replan');
+      const left = config.budgetMin - S.usedMin;
+      const intoReserve = left < config.reserveMin - 0.5;
+      const ranOut = left < 0;
+      pushAlert({
+        level: ranOut ? 'danger' : (aborted || intoReserve) ? 'warn' : 'ok', kind: 'done',
+        title: `Back at ${stopName(mark.id)}: walk ${aborted ? 'aborted' : 'complete'}${ranOut ? ', AIR BUDGET OVERRUN' : intoReserve ? ', reserve used' : ''}`,
+        text: `T+${fmtMin(S.t)}, air left ${Math.round(left)} min`
+          + (ranOut ? ` (${Math.round(-left)} min past the budget)` : intoReserve ? ` (${Math.round(config.reserveMin - left)} min into the ${config.reserveMin} min reserve)` : ''),
+      });
+      if (st().playing) ctx.setState({ playing: false });
+      return;
+    }
+    const planned = plannedArriveFor(mark.id);
+    const behind = Math.max(0, S.t - S.routeT);
+    pushAlert({
+      level: 'info', kind: 'arrive', title: `Arrived at ${stopName(mark.id)}`,
+      text: `T+${fmtMin(S.t)}${planned != null ? ` (planned ${fmtMin(planned)})` : ''}${behind >= 0.5 ? `, ${Math.round(behind)} min behind` : ''}`,
+    });
+    if (isReturnKind(S.active.kind)) return;
+
+    // ---- the replan rule
+    const remaining = [mark.id, ...remainingStopIds()];
+    const hit = findReplanEntry(variants, mark.id, remaining, S.active.variantId);
+    if (!hit) return;
+    const leftMin = config.budgetMin - S.usedMin;
+    const pace = paceFactor();
+    // the rule is applied to the time each option really takes at the crew's current pace
+    const durationOf = pace === 1 ? null
+      : (o) => pacedDuration(o.path, o.t_min, o.t_min[0], o.t_min[o.t_min.length - 1], pace);
+    const choice = chooseReplanOption(hit.entry.options, S.t, config.budgetMin, config.reserveMin, {
+      burnFactor: burnFactor(), airLeftMin: leftMin, durationOf,
+    });
+    const rejected = choice.rejected.map((r) => ({
+      kind: r.option.kind, label: optionLabel(r.option, mark.id, hit.entry),
+      projectedReturnT: r.projectedReturnT, overByMin: r.overByMin, failed: r.failed,
+    }));
+    const pid = `${mark.id}@${S.t.toFixed(1)}`;
+    if (choice.option && choice.option.kind === 'planned') {
+      S.replans = [...S.replans, { id: pid, t: S.t, atStopId: mark.id, kind: 'planned', label: 'Continue as planned', confirmedT: S.t, trigger: 'schedule' }];
+      return;
+    }
+    let route, kind, label, why, option, minutes, savesMin, stops, routeId;
+    if (choice.option) {
+      option = choice.option;
+      kind = option.kind;
+      label = optionLabel(option, mark.id, hit.entry);
+      why = option.why || [];
+      minutes = option.minutes;
+      savesMin = option.saves_min ?? 0;
+      stops = option.stops;
+      route = { path: option.path, tMin: option.t_min, homeMin: option.home_min };
+      routeId = `${hit.variantId}@${mark.id}:${kind}`;
+    } else {
+      // nothing fits and the entry has no abort option: synthesize "skip the work and go home"
+      const b = bestReturn();
+      option = { kind: 'abort', stops: [mark.id, ...b.stops], minutes: b.minutes, saves_min: Math.max(0, (hit.entry.options[0]?.minutes ?? b.minutes) - b.minutes), path: b.route.path, t_min: b.route.tMin, home_min: b.route.homeMin, abort: true, why: b.why, synthesized: true };
+      kind = 'abort'; label = `Abort: ${b.label}`; why = b.why; minutes = b.minutes; savesMin = option.saves_min;
+      stops = option.stops; route = b.route; routeId = `${hit.variantId}@${mark.id}:abort`;
+    }
+    const why2 = [...why];
+    if (!choice.fits) why2.unshift('No option fits the budget with the reserve kept, so the rule falls back to abort');
+    else if (choice.trigger === 'air') why2.unshift('Air use is higher than planned: the longer options would eat into the reserve');
+    if (pace !== 1) why2.push(`Option times stretched to the current pace (${pace}x walking speed)`);
+    const reb = rebase(route);
+    const p = {
+      id: pid, trigger: choice.trigger, atStopId: mark.id, atStopName: stopName(mark.id),
+      arrivedT: S.t, plannedArriveT: planned, behindMin: behind,
+      kind, label, option, minutes, savesMin, why: why2, path: route.path,
+      safety: safetyFor(minutes, reb), rejected,
+    };
+    const act = makeActive({
+      id: routeId, kind, label, variantId: hit.variantId, stops,
+      path: reb.path, tMin: reb.tMin, homeMin: reb.homeMin, why: why2, distanceM: option.distance_m,
+    });
+    setPending(p, act, act.stopMarks.length > 1 ? 1 : 0);
+  }
+
+  /** Turn-around (trigger 'air') or storm (trigger 'storm') return proposal. */
+  function proposeReturn(trigger) {
+    const isStorm = trigger === 'storm';
+    if (alreadyHeadingHome()) {
+      // the rest of the route already is the way home: no reroute to confirm
+      if (isStorm && !isReturnKind(S.active.kind)) {
+        S.active = { ...S.active, kind: 'abort', label: 'Storm: straight home', id: `${S.active.id}>home` };
+        S.status = 'returning';
+      }
+      return false;
+    }
+    const b = bestReturn();
+    const reb = rebase(b.route);
+    const kind = isStorm ? 'abort' : 'return';
+    const at = currentStopMark();
+    const why = [
+      isStorm ? 'Dust / solar storm: walk aborted, shortest safe way home' : 'Air for the walk home is getting short: turn around now',
+      ...b.why,
+    ];
+    const label = isStorm ? `Storm: ${b.label}` : `Turn around: ${b.label}`;
+    const remainingPlanned = pacedDuration(S.active.path, S.active.tMin, S.routeT, S.active.tMin[S.active.tMin.length - 1], 1);
+    const option = {
+      kind, stops: b.stops, work_here_min: 0, minutes: b.minutes, saves_min: Math.max(0, remainingPlanned - b.minutes),
+      path: b.route.path, t_min: b.route.tMin, home_min: b.route.homeMin, abort: true, why, synthesized: true,
+    };
+    const p = {
+      id: `${trigger}@${S.t.toFixed(1)}`, trigger, atStopId: at ? at.id : null,
+      atStopName: at ? stopName(at.id) : 'mid-leg', arrivedT: S.t,
+      plannedArriveT: at ? plannedArriveFor(at.id) : null, behindMin: Math.max(0, S.t - S.routeT),
+      kind, label, option, minutes: b.minutes, savesMin: option.saves_min, why, path: b.route.path,
+      safety: safetyFor(b.minutes, reb), rejected: [],
+    };
+    const act = makeActive({
+      id: `return@${S.t.toFixed(1)}`, kind, label, variantId: S.active.variantId, stops: b.stops,
+      path: reb.path, tMin: reb.tMin, homeMin: reb.homeMin, why,
+    });
+    setPending(p, act, 0);
+    return true;
+  }
+
+  function confirm(id) {
+    if (!S.pending || (id != null && id !== S.pending.id)) return;
+    const p = S.pending;
+    timeline = [...timeline, { t: S.t, type: 'confirm', trigger: p.trigger, atStopId: p.atStopId, kind: p.kind }];
+    applyConfirm();
+    // reaching the end immediately (e.g. return from H) finishes on the next step
+    publish();
+    ctx.setState({ playing: true });
+  }
+
+  function applyConfirm() {
+    const p = S.pending;
+    const oldRemaining = remainingStopIds();
+    const next = S.pendingRoute;
+    const keep = new Set(next.stops);
+    const newlyDropped = oldRemaining.filter((s) => s !== H_ID && !keep.has(s) && !S.visited.includes(s) && !S.dropped.includes(s));
+    if (newlyDropped.length) S.dropped = [...S.dropped, ...newlyDropped];
+    S.active = next;
+    S.markIdx = S.pendingMarkIdx;
+    S.pending = null;
+    S.pendingRoute = null;
+    S.replans = S.replans.map((r) => (r.id === p.id && r.confirmedT == null ? { ...r, confirmedT: S.t } : r));
+    const rec = S.replans.find((r) => r.id === p.id);
+    deactivateAlerts((a) => a.kind === 'replan');
+    S.status = isReturnKind(next.kind) ? 'returning' : 'walking';
+    pushAlert({ level: 'ok', kind: 'replan', title: 'Reroute confirmed', text: p.label });
+    if (!S.seeking) ctx.emit('replan:applied', rec);
+  }
+
+  // --------------------------------------------------------------- faults
+  function syncFaults() {
+    lastInputs = inputs();
+    const f = lastInputs.faults || {};
+    // link
+    if (f.linkLost && S.link.ok) {
+      S.link = { ok: false, lostSinceT: S.t, linkAlertId: null };
+      S.link.linkAlertId = pushAlert({
+        level: 'danger', kind: 'link', active: true, title: 'Rover link lost: suit-only mode',
+        text: 'Position from dead reckoning, uncertainty growing. Follow the way home on the HUD if needed.',
+      });
+    } else if (!f.linkLost && !S.link.ok) {
+      S.link = { ok: true, lostSinceT: null, linkAlertId: null };
+      deactivateAlerts((a) => a.kind === 'link');
+      pushAlert({ level: 'ok', kind: 'link', title: 'Rover link restored: position fixed', text: 'Dot snapped back to the rover fix.' });
+    }
+    // storm
+    if (f.storm && !S.storm.on) {
+      S.storm = { ...S.storm, on: true };
+      if (S.status === 'idle') {
+        pushAlert({ level: 'danger', kind: 'storm', active: true, title: 'Storm: EVA on hold', text: 'Dust / solar storm warning. Do not leave the habitat.' });
+      } else if (!finished()) {
+        const homeBound = alreadyHeadingHome() || (isReturnKind(S.active.kind) && !S.pending);
+        pushAlert({
+          level: 'danger', kind: 'storm', active: true, title: 'Storm: walk aborted',
+          text: homeBound ? 'Dust / solar storm warning. Already on the way home: keep walking, no more stops.'
+            : 'Dust / solar storm warning. Heading home by the shortest safe route: confirm the reroute.',
+        });
+        // proposes a reroute, or (already home-bound) just marks the active route as an abort
+        if (!isReturnKind(S.active.kind) || S.pending) proposeReturn('storm');
+      }
+    } else if (!f.storm && S.storm.on) {
+      S.storm = { ...S.storm, on: false };
+      deactivateAlerts((a) => a.kind === 'storm');
+      pushAlert({ level: 'info', kind: 'storm', title: 'Storm warning cleared', text: finished() || S.status === 'idle' ? 'Conditions back to normal.' : 'The walk stays aborted: keep heading home.' });
+    }
+  }
+
+  // ----------------------------------------------------------------- step
+  /** Advance the sim by dt minutes (one chunk, <= 0.25 min recommended). Returns minutes consumed. */
+  function step(dt) {
+    if (S.pending || finished()) return 0;
+    if (S.status === 'idle') {
+      if (S.storm.on) return 0;
+      S.status = 'walking';
+    }
+    let rem = dt;
+    let guard = 0;
+    while (rem > EPS && !S.pending && !finished() && guard++ < 1000) {
+      const a = S.active;
+      const n = a.path.length;
+      const mark = a.stopMarks[S.markIdx];
+      if (mark && S.routeT >= mark.arriveMin - EPS) { arrive(mark); continue; }
+      if (n < 2 || S.routeT >= a.tMin[n - 1] - EPS) {
+        // end of route without a final mark: treat as home
+        S.status = isReturnKind(a.kind) ? 'aborted' : 'done';
+        pushAlert({ level: 'ok', kind: 'done', title: 'Route complete', text: `T+${fmtMin(S.t)}` });
+        if (st().playing) ctx.setState({ playing: false });
+        break;
+      }
+      const i = segmentIndexAt(a.tMin, S.routeT);
+      const stationary = samePx(a.path[i], a.path[i + 1]);
+      const rate = stationary ? 1 : paceFactor();
+      let target = a.tMin[i + 1];
+      if (mark && mark.arriveMin < target) target = Math.max(S.routeT, mark.arriveMin);
+      const need = (target - S.routeT) / rate;
+      const use = Math.min(need, rem);
+      S.t += use;
+      S.usedMin += use * burnFactor();
+      S.routeT = use >= need ? target : S.routeT + use * rate;
+      rem -= use;
+      S.status = isReturnKind(a.kind) ? 'returning' : (stationary ? 'working' : 'walking');
+    }
+    if (!S.pending && !finished()) {
+      const { p } = locate();
+      pushTrail(p.px);
+      checkAir(p.px);
+    }
+    return dt - rem;
+  }
+
+  function checkAir(truePx) {
+    const air = airNow(displayedPx(truePx, 0));
+    const burn = burnFactor();
+    if (!S.airOutAlerted && air.leftMin <= 0) {
+      S.airOutAlerted = true;
+      pushAlert({ level: 'danger', kind: 'air', active: true, title: 'Air budget used up', text: 'Suit is on reserve air.' });
+    }
+    if (S.turnaround || S.pending || isReturnKind(S.active.kind)) return;
+    if (S.status !== 'walking' && S.status !== 'working') return;
+    if (!turnaroundDue(air.leftMin, air.homeAirMin, config.reserveMin, config.turnaroundMarginMin)) return;
+    S.turnaround = true;
+    const homeBound = alreadyHeadingHome();
+    pushAlert({
+      level: 'danger', kind: 'air', active: true, title: 'Turn around: air for the walk home is getting short',
+      text: `Air left ${Math.round(air.leftMin)} min; the walk home needs ${Math.round(air.homeAirMin)} min of air`
+        + (burn !== 1 || paceFactor() !== 1 ? ` (${burn}x burn${paceFactor() !== 1 ? ', slow pace' : ''})` : '')
+        + ` + ${config.reserveMin} min reserve.`
+        + (homeBound ? (air.marginMin < -config.turnaroundMarginMin
+          ? ' Already on the shortest way home: keep walking, the reserve will be used.'
+          : ' Already heading home: keep walking, no more stops.') : ' Reroute home proposed.'),
+    });
+    if (!homeBound) proposeReturn('air');
+  }
+
+  // -------------------------------------------------------------- publish
+  function homePathFor(loc) {
+    const a = S.active;
+    const key = `${a.id}|${loc.p.i}|${S.markIdx}|${Math.round(S.routeT * 4)}`;
+    if (homeCache.key === key) return homeCache.path;
+    let path;
+    if (isReturnKind(a.kind) || finished()) path = sliceRouteFrom(a.path, a.tMin, a.homeMin, S.routeT).path;
+    else path = bestReturn().route.path;
+    homeCache = { key, path };
+    return path;
+  }
+
+  function statusText(nextStop, working) {
+    const a = S.active;
+    switch (S.status) {
+      case 'idle': return S.storm.on ? 'Storm: EVA on hold' : `Ready: ${a.label}`;
+      case 'working': return working ? `Working at ${stopName(working.stopId)}, ${Math.ceil(working.leftMin)} min left` : 'Working';
+      case 'walking': return nextStop ? `Walking to ${nextStop.name}` : 'Walking';
+      case 'awaiting_confirm': return `Reroute proposed${S.pending?.atStopId ? ` at ${S.pending.atStopName}` : ''}: confirm to continue`;
+      case 'returning': return `${S.storm.on ? 'Storm: r' : 'R'}eturning to ${stopName(H_ID)}`;
+      case 'done': case 'aborted': {
+        const left = config.budgetMin - S.usedMin;
+        const note = left < 0 ? ', air budget overrun' : left < config.reserveMin - 0.5 ? ', reserve used' : '';
+        return `Back at ${stopName(H_ID)}: walk ${S.status === 'done' ? 'complete' : 'aborted'}${note}`;
+      }
+      default: return S.status;
+    }
+  }
+
+  function snapshot() {
+    const a = S.active;
+    const loc = locate();
+    const { p, cum, along, total } = loc;
+    const truePx = p.px;
+    const pace = paceFactor();
+    const burn = burnFactor();
+
+    if (!p.stationary && !p.atEnd && a.path.length > 1) {
+      const i = clamp(p.i, 0, a.path.length - 2);
+      if (!samePx(a.path[i], a.path[i + 1])) S.headingDeg = bearingDeg(a.path[i], a.path[i + 1]);
+    }
+
+    const unc = uncertaintyM();
+    const ev2True = pointBehind(S.trail, truePx, config.crewSpacingM, pixelM);
+    const crew = [
+      { id: 'EV1', label: 'EV1', px: displayedPx(truePx, 0), truePx: [...truePx], uncertaintyM: unc },
+      { id: 'EV2', label: 'EV2', px: displayedPx(ev2True, 1), truePx: ev2True, uncertaintyM: unc },
+    ];
+    const ev1 = crew[0].px;
+    const rov = positionAtDistance(a.path, cum, along + config.roverAheadM);
+
+    const air = airNow(ev1);
+
+    let working = null;
+    if (p.stationary && !p.atEnd) {
+      const m = a.stopMarks.find((mk) => S.routeT >= mk.arriveMin - EPS && S.routeT < mk.departMin);
+      if (m) working = { stopId: m.id, leftMin: m.departMin - S.routeT };
+    }
+
+    let nextStop = null;
+    const mk = finished() ? null : a.stopMarks[S.markIdx];
+    if (mk) {
+      const spx = stopPx(mk.id) || a.path[mk.pathIndex];
+      const pa = plannedArriveFor(mk.id);
+      nextStop = {
+        id: mk.id, name: stopName(mk.id), px: spx,
+        distanceM: Math.max(0, cum[mk.pathIndex] - along),
+        straightM: distM(ev1, spx, pixelM),
+        bearingDeg: bearingDeg(ev1, spx),
+        etaT: S.t + pacedDuration(a.path, a.tMin, S.routeT, mk.arriveMin, pace),
+        ...(pa != null ? { plannedArriveT: pa } : {}),
+      };
+    }
+
+    const endT = a.tMin[a.tMin.length - 1] ?? 0;
+    const projectedReturnT = S.t + pacedDuration(a.path, a.tMin, S.routeT, endT, pace);
+    const f = inputs().faults || {};
+    const dust = data.env?.dust ?? 'unknown';
+    const solarAlert = !!data.env?.solar_alert || !!f.storm;
+    const dustLevel = /high|severe|storm/i.test(dust) ? 'danger' : /moderate|medium/i.test(dust) ? 'warn' : 'ok';
+    const envLevel = f.storm ? 'danger' : (solarAlert ? 'warn' : dustLevel === 'danger' ? 'warn' : dustLevel);
+    const envText = f.storm
+      ? (S.status === 'idle' ? 'STORM: EVA on hold' : finished() ? 'STORM: crew back at the habitat' : 'STORM: walk aborted, heading home')
+      : `Dust ${dust} · ${solarAlert ? 'SOLAR ALERT' : 'no solar alert'}`;
+
+    const visibleHomeMin = air.timeHomeMin;
+    const pending = S.pending;
+
+    return {
+      t: S.t,
+      routeT: S.routeT,
+      status: S.status,
+      statusText: statusText(nextStop, working),
+      paceFactor: pace,
+      active: a,
+      trail: S.trail,
+      progress: { i: p.i, frac: p.frac, distanceAlongM: along, remainingM: Math.max(0, total - along) },
+      nextStop,
+      headingDeg: S.headingDeg,
+      working,
+      crew,
+      rover: { px: rov.px, linkOk: S.link.ok, aheadM: Math.max(0, Math.min(config.roverAheadM, total - along)) },
+      air: {
+        budgetMin: config.budgetMin, reserveMin: config.reserveMin,
+        usedMin: S.usedMin, leftMin: air.leftMin, burnFactor: burn,
+        timeHomeMin: air.timeHomeMin, timeHomeSource: air.timeHomeSource,
+        wayHomeMin: air.wayHomeMin, homeAirMin: air.homeAirMin, neededMin: air.neededMin, paceFactor: pace,
+        marginMin: air.marginMin, level: airLevel(air.marginMin, config.turnaroundMarginMin),
+        turnaround: S.turnaround,
+      },
+      schedule: {
+        behindMin: Math.max(0, S.t - S.routeT),
+        plannedReturnT: plannedVariant().est_min ?? (plannedVariant().t_min?.at(-1) ?? 0),
+        projectedReturnT,
+      },
+      env: { dust, solarAlert, stormActive: !!f.storm, level: envLevel, text: envText },
+      link: { ok: S.link.ok, lostSinceT: S.link.lostSinceT },
+      home: {
+        px: homePx, bearingDeg: bearingDeg(ev1, homePx), straightM: distM(ev1, homePx, pixelM),
+        timeHomeMin: visibleHomeMin, path: homePathFor(loc),
+      },
+      visited: S.visited,
+      dropped: S.dropped,
+      replans: S.replans,
+      pendingReplan: pending,
+      alerts: S.alerts,
+    };
+  }
+
+  function publish() {
+    ctx.setState({ sim: snapshot() });
+  }
+
+  // ------------------------------------------------------- reset / seek
+  function reset() {
+    const vid = st().plannedVariantId;
+    S = freshState(vid);
+    homeCache = { key: '', path: null };
+    const prevSeeking = S.seeking;
+    S.seeking = true; // reset-time fault alerts are silent
+    syncFaults();
+    S.seeking = prevSeeking;
+  }
+
+  /** Reset that also forgets the recorded timeline (Reset button, new plan, replay after the end). */
+  function hardReset() {
+    timeline = [];
+    baseInputs = stateInputs();
+    reset();
+  }
+
+  /** Record a user change of faults / slow pace at the current sim time (for seek replay). */
+  function recordInputs() {
+    const now = stateInputs();
+    if (sameInputs(now, lastInputs)) return false;
+    if (S.status === 'idle' && S.t <= EPS) baseInputs = now;
+    else timeline = [...timeline, { t: S.t, type: 'inputs', ...now }];
+    return true;
+  }
+
+  /**
+   * Jump to sim time `target` by replaying from T+0: fault / pace toggles are re-applied at the
+   * times they happened and reroutes the user already confirmed are confirmed again. The replay
+   * stops at a proposal that was never confirmed. Seeking backwards forgets anything recorded
+   * after the target, and the fault toggles in the UI are set to what was in force at the target.
+   */
+  function seek(target) {
+    const goal = clamp(Number(target) || 0, 0, config.budgetMin * 2);
+    timeline = timeline.filter((e) => e.t <= goal + EPS);
+    const events = timeline.filter((e) => e.type === 'inputs');
+    const confirms = timeline.filter((e) => e.type === 'confirm').map((e) => ({ ...e, used: false }));
+    replay = { ...(baseInputs || stateInputs()) };
+    reset();
+    S.seeking = true;
+    let k = 0;
+    const applyInputsUpTo = (t) => {
+      let changed = false;
+      while (k < events.length && events[k].t <= t + EPS) {
+        replay = { faults: { ...events[k].faults }, slowPace: events[k].slowPace };
+        k++; changed = true;
+      }
+      if (changed) syncFaults();
+    };
+    const autoConfirm = () => {
+      const p = S.pending;
+      const c = confirms.find((e) => !e.used && e.trigger === p.trigger && e.atStopId === p.atStopId
+        && e.kind === p.kind && Math.abs(e.t - S.t) < 1);
+      if (!c) return false;
+      c.used = true;
+      applyConfirm();
+      return true;
+    };
+    let guard = 0;
+    while (guard++ < 100000) {
+      applyInputsUpTo(S.t);
+      if (S.pending) { if (autoConfirm()) continue; break; }
+      if (finished() || S.t >= goal - EPS) break;
+      const nextEv = k < events.length ? events[k].t : Infinity;
+      const used = step(Math.max(EPS * 10, Math.min(0.25, goal - S.t, nextEv - S.t)));
+      if (used <= EPS && !S.pending && !finished()) break; // blocked (e.g. storm hold)
+    }
+    // inputs recorded up to the target stay in force even if the walk ended or stopped earlier
+    if (k < events.length) {
+      replay = { faults: { ...events[events.length - 1].faults }, slowPace: events[events.length - 1].slowPace };
+      syncFaults();
+    }
+    const finalInputs = replay;
+    replay = null;
+    S.seeking = false;
+    lastInputs = finalInputs;
+    // keep the UI toggles in step with what is in force at the target time
+    const s0 = st();
+    const patch = {};
+    if (['linkLost', 'highAir', 'storm'].some((f) => !!s0.faults?.[f] !== !!finalInputs.faults?.[f])) {
+      patch.faults = { ...(s0.faults || {}), ...finalInputs.faults };
+    }
+    if (!!s0.slowPace !== !!finalInputs.slowPace) patch.slowPace = finalInputs.slowPace;
+    if (Object.keys(patch).length) ctx.setState(patch);
+    publish();
+    if (st().playing && (S.pending || finished())) ctx.setState({ playing: false });
+  }
+
+  // -------------------------------------------------------------- clock
+  let lastTs = null;
+  function frame(ts) {
+    const s = st();
+    if (s.playing && S) {
+      if (S.pending || finished()) {
+        lastTs = null;
+        ctx.setState({ playing: false });
+      } else {
+        if (lastTs == null) lastTs = ts;
+        const realSec = Math.max(0, (ts - lastTs) / 1000);
+        lastTs = ts;
+        let dt = Math.min(3, realSec * (s.speed || 300) / 60);
+        while (dt > EPS && !S.pending && !finished()) {
+          const chunk = Math.min(0.25, dt);
+          const used = step(chunk);
+          if (used <= EPS) { dt = 0; break; }
+          dt -= chunk;
+        }
+        publish();
+        if (st().playing && (S.pending || finished() || (S.status === 'idle' && S.storm.on))) ctx.setState({ playing: false });
+      }
+    } else {
+      lastTs = null;
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // -------------------------------------------------------------- wiring
+  hardReset();
+  publish();
+
+  ctx.subscribe((s, prev, changed) => {
+    if (!S) return;
+    if (changed.has('plannedVariantId') && S.status === 'idle' && s.plannedVariantId !== S.plannedVariantId) {
+      hardReset();
+      publish();
+    }
+    if (changed.has('faults') || changed.has('slowPace')) {
+      // a toggle the seek replay just applied matches lastInputs and is not recorded again
+      if (recordInputs()) syncFaults();
+      publish();
+    }
+    if (changed.has('slowPace') || (changed.has('faults') && s.faults?.highAir !== prev.faults?.highAir)) {
+      publish();
+    }
+    if (changed.has('playing') && s.playing && finished()) {
+      // pressing Play after the walk ended starts it over
+      hardReset();
+      publish();
+    }
+  });
+
+  ctx.on('sim:reset', () => { hardReset(); publish(); });
+  ctx.on('sim:seek', (e) => seek(e?.t ?? 0));
+  ctx.on('replan:confirm', (e) => confirm(e?.id));
+
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(frame);
+
+  // small debug/test API (no other module should rely on it)
+  return {
+    step: (dt) => { const u = step(dt); publish(); return u; },
+    runTo: (t) => seek(t),
+    confirm,
+    reset: () => { hardReset(); publish(); },
+  };
+}

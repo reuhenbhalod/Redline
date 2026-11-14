@@ -277,3 +277,20 @@ def test_fake_scenarios_route(tmp_path, scenario):
     st = json.loads((grid / "stops.json").read_text())
     routes, *_ = engine.plan_routes(L, st)
     assert engine.validate_routes(routes, (300, 300)) == []
+
+
+def test_time_home_matches_walk_home_with_dtm():
+    """Time-home grid is the fastest way home, so never slower than the planned leg home."""
+    import fake_terrain as ft
+    dtm, slope, sand, rough, nogo = ft.make_layers(300)
+    L = engine.Layers(slope, sand, rough, nogo, dtm=dtm)
+    routes, *_ = engine.plan_routes(L, ft.fake_stops(300))
+    full = next(v for v in routes["variants"] if v["id"] == "full")
+    last = full["legs"][-1]
+    b = next(s for s in full["stop_plan"] if s["id"] == last["from"])
+    assert b["home_min"] <= last["walk_min"] * 1.02
+    assert b["home_min"] >= last["walk_min"] * 0.7
+    # downhill-aware: a crew on a hill gets home faster than the symmetric model says
+    sym = engine.time_home_from(engine.build_terrain(engine.Layers(slope, sand, rough, nogo)), full["stop_plan"][0]["id"] and routes["stops_px"]["H"])
+    x, y = routes["stops_px"][last["from"]]
+    assert b["home_min"] < sym[y, x]

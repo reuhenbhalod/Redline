@@ -30,7 +30,7 @@ NOGO_BUFFER_PX = 2           # hard buffer: no-go grows by this many cells (2 px
 V_FLAT_KMH = 2.0
 TOBLER_K = 3.5
 TOBLER_OFFSET = 0.05         # Tobler's fastest grade is a slight downhill (-5%)
-ASYMMETRIC_WALK = True       # use the DTM (if provided) so uphill and downhill differ on legs
+ASYMMETRIC_WALK = True       # use the DTM (if provided) so uphill and downhill differ (legs and time home)
 SAND_SLOWDOWN = 0.4          # speed x (1 - SAND_SLOWDOWN * sand)
 ROUGH_SLOWDOWN = 0.3         # speed x (1 - ROUGH_SLOWDOWN * rough)
 

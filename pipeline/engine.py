@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 from scipy.ndimage import binary_dilation, distance_transform_edt, uniform_filter
 from skimage.draw import line as draw_line
-from skimage.graph import MCP_Geometric
+from skimage.graph import MCP_Flexible, MCP_Geometric
 from skimage.measure import approximate_polygon
 
 import config as default_cfg
@@ -210,15 +210,45 @@ def time_grid(layers: Layers, cfg=default_cfg) -> np.ndarray:
 
 
 def time_home_from(terrain: Terrain, habitat_xy) -> np.ndarray:
-    """Fastest walking time (minutes) from every cell back to the habitat.
+    """Fastest walking time (minutes) from every cell back to the habitat. Unreachable = +inf.
 
-    Uses the direction-free speed model, so one Dijkstra from the habitat covers
-    every cell. Unreachable cells are +inf.
+    With a DTM (and ASYMMETRIC_WALK), each step is timed in the direction of the walk
+    home, so a downhill return is faster than the outbound climb, matching leg times.
+    Otherwise uses the direction-free speed model.
     """
     x, y = habitat_xy
-    mcp = MCP_Geometric(terrain.time, fully_connected=True)
+    L, cfg = terrain.layers, terrain.cfg
+    if L.dtm is None or not cfg.ASYMMETRIC_WALK:
+        mcp = MCP_Geometric(terrain.time, fully_connected=True)
+        minutes, _ = mcp.find_costs([(y, x)])
+        return minutes
+    h, w = terrain.shape
+    idx = np.arange(h * w, dtype=np.float64).reshape(h, w)  # each cell's "cost" is its own index
+    idx[terrain.walk_blocked] = np.inf
+    mcp = _HomeMCP(idx, L, cfg)
     minutes, _ = mcp.find_costs([(y, x)])
-    return minutes
+    return minutes - idx[y, x]  # MCP counts the start cell's value once
+
+
+class _HomeMCP(MCP_Flexible):
+    """Dijkstra outward from the habitat, timing each step for walking back toward it."""
+
+    def __init__(self, idx, layers: Layers, cfg):
+        super().__init__(idx, fully_connected=True)
+        self.z = np.nan_to_num(layers.dtm.astype(np.float64), nan=0.0).ravel()
+        self.terr = ((1 - cfg.SAND_SLOWDOWN * _clean(layers.sand))
+                     * (1 - cfg.ROUGH_SLOWDOWN * _clean(layers.rough))).ravel().astype(np.float64)
+        self.v0 = cfg.V_FLAT_KMH * 1000 / 60
+        self.k, self.off, self.pm = cfg.TOBLER_K, cfg.TOBLER_OFFSET, cfg.PIXEL_M
+        self.norm = math.exp(-cfg.TOBLER_K * cfg.TOBLER_OFFSET)
+        self.maxg = math.tan(math.radians(cfg.SLOPE_HARD_DEG))
+
+    def travel_cost(self, old_cost, new_cost, offset_length):
+        a, b = int(old_cost), int(new_cost)  # a is nearer home; the crew walks b -> a
+        d = offset_length * self.pm
+        g = min(self.maxg, max(-self.maxg, (self.z[a] - self.z[b]) / d))
+        v = self.v0 * math.exp(-self.k * abs(g + self.off)) / self.norm * 0.5 * (self.terr[a] + self.terr[b])
+        return d / v
 
 
 def time_home(layers: Layers, habitat_xy, cfg=default_cfg) -> np.ndarray:
@@ -874,8 +904,8 @@ def plan_routes(layers: Layers, stops_list: list[dict], cfg=default_cfg):
             f"Suited walking speed {cfg.V_FLAT_KMH:g} km/h on flat ground, slower on slopes (Tobler-style), "
             f"up to {cfg.SAND_SLOWDOWN:.0%} slower in soft sand",
             "Cost weights are tuning knobs, not physics",
-            "Time to walk home ignores uphill vs downhill" + (
-                "; leg times include it" if layers.dtm is not None and cfg.ASYMMETRIC_WALK else ""),
+            ("Walking times include uphill vs downhill (Tobler)" if layers.dtm is not None and cfg.ASYMMETRIC_WALK
+             else "Walking times ignore uphill vs downhill (no elevation model given)"),
         ],
         "warnings": warnings,
     }

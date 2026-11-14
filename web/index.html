@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Marswalk Planner</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="map.css">
+  <link rel="stylesheet" href="panels.css">
+  <link rel="stylesheet" href="hud.css">
+  <!-- Leaflet is a classic script: it defines window.L before app.js (a module) runs. -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body data-mode="planner">
+  <header id="topbar">
+    <div class="tb-group tb-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <h1 class="brand-title">Marswalk Planner</h1>
+      <span id="fake-badge" class="badge badge-fake" hidden title="bounds.json / routes.json are marked fake: true">FAKE DATA</span>
+    </div>
+
+    <div class="tb-group" role="group" aria-label="Mode">
+      <div class="seg" id="mode-switch">
+        <button type="button" class="seg-btn" data-mode-btn="planner" aria-pressed="true">Planner</button>
+        <button type="button" class="seg-btn" data-mode-btn="hud" aria-pressed="false" title="Helmet HUD (h)">HUD</button>
+      </div>
+    </div>
+
+    <div class="tb-group tb-sim" role="group" aria-label="Sim clock">
+      <button type="button" id="btn-play" class="btn btn-primary" title="Play / pause (space)">Play</button>
+      <label class="tb-field" title="Sim speed (x real time)">
+        <span class="sr-only">Speed</span>
+        <select id="sel-speed">
+          <option value="60">60×</option>
+          <option value="120">120×</option>
+          <option value="300" selected>300×</option>
+          <option value="600">600×</option>
+          <option value="1200">1200×</option>
+        </select>
+      </label>
+      <button type="button" id="btn-reset" class="btn" title="Reset sim (r)">Reset</button>
+      <input type="range" id="scrub" min="0" max="300" step="0.5" value="0" aria-label="Sim time scrubber">
+      <span id="clock" class="clock" title="Sim time since leaving the habitat">T+0:00</span>
+      <span id="status-chip" class="chip">idle</span>
+    </div>
+
+    <div class="tb-group tb-toggles" role="group" aria-label="Demo toggles">
+      <button type="button" class="toggle" id="tgl-slow" data-toggle="slowPace" aria-pressed="false" title="Crew walks slower than planned so the replan fires">Slow pace</button>
+      <button type="button" class="toggle toggle-fault" id="tgl-link" data-toggle="faults.linkLost" aria-pressed="false" title="Fallback demo: rover radio link lost">Cut rover link</button>
+      <button type="button" class="toggle toggle-fault" id="tgl-air" data-toggle="faults.highAir" aria-pressed="false" title="Fallback demo: air use higher than planned">High air use</button>
+      <button type="button" class="toggle toggle-fault" id="tgl-storm" data-toggle="faults.storm" aria-pressed="false" title="Fallback demo: dust / solar storm starts">Storm</button>
+    </div>
+  </header>
+
+  <main id="planner" aria-label="Habitat planner">
+    <div id="map" aria-label="Map"></div>
+    <aside id="side-panel" aria-label="Side panel"></aside>
+  </main>
+
+  <section id="hud" aria-label="Helmet HUD" hidden></section>
+
+  <div id="toasts" aria-live="polite"></div>
+
+  <div id="load-error" role="alert" hidden></div>
+</body>
+</html>
