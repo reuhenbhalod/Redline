@@ -1,0 +1,34 @@
+{
+  "width_px": 2000,
+  "height_px": 2000,
+  "pixel_m": 2.0,
+  "crs": "+proj=eqc +lat_ts=18.456978 +lat_0=18.456978 +lon_0=77.416682 +R=3396190.0 +units=m +no_defs",
+  "center_lonlat": [
+    77.416682,
+    18.456978
+  ],
+  "local_xmin_m": -2000.0,
+  "local_ymax_m": 2000.0,
+  "origin": "top-left",
+  "x": "east",
+  "y": "south",
+  "note": "pixel [x, y]; Leaflet CRS.Simple: latlng = [height_px - y, x]",
+  "corners_lonlat": {
+    "nw": [
+      77.381111,
+      18.490719
+    ],
+    "ne": [
+      77.452253,
+      18.490719
+    ],
+    "se": [
+      77.452253,
+      18.423237
+    ],
+    "sw": [
+      77.381111,
+      18.423237
+    ]
+  }
+}

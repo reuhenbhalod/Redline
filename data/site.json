@@ -1,0 +1,329 @@
+{
+  "habitat": {
+    "lon": 77.42727063848967,
+    "lat": 18.46143326247764,
+    "mean_slope_100m_deg": 0.8,
+    "dist_to_depot_m": 1187,
+    "stack_unit": "Undifferentiated smooth",
+    "slope_source": "CTX 20 m DTM (confirmed in D2 with HiRISE)",
+    "px": [
+      1297.7,
+      868.0
+    ]
+  },
+  "depot_center": {
+    "lon": 77.408206855,
+    "lat": 18.452829254,
+    "px": [
+      761.7,
+      1123.0
+    ],
+    "tube_spread_m": 35
+  },
+  "stop_a": {
+    "sol": 460,
+    "site": 26,
+    "drive": 470,
+    "lon": 77.40609259,
+    "lat": 18.45851434,
+    "dist_to_depot_m": 357,
+    "stack_unit": "Delta thinly layered",
+    "stack_bedrock": "Delta thinly layered",
+    "clay_frac": 1.0,
+    "carb_frac": 0.0,
+    "crism_none_frac": 0.0,
+    "crism_coverage": 1.0,
+    "depot_samples_cored_here": [
+      "Bearwallow"
+    ],
+    "score": 1.15,
+    "px": [
+      702.3,
+      954.5
+    ]
+  },
+  "stop_a_shortlist": [
+    {
+      "sol": 460,
+      "site": 26,
+      "drive": 470,
+      "lon": 77.40609259,
+      "lat": 18.45851434,
+      "dist_to_depot_m": 357,
+      "stack_unit": "Delta thinly layered",
+      "stack_bedrock": "Delta thinly layered",
+      "clay_frac": 1.0,
+      "carb_frac": 0.0,
+      "crism_none_frac": 0.0,
+      "crism_coverage": 1.0,
+      "depot_samples_cored_here": [
+        "Bearwallow"
+      ],
+      "score": 1.15,
+      "px": [
+        702.3,
+        954.5
+      ]
+    },
+    {
+      "sol": 464,
+      "site": 26,
+      "drive": 756,
+      "lon": 77.40601278,
+      "lat": 18.45879356,
+      "dist_to_depot_m": 374,
+      "stack_unit": "Delta thinly layered",
+      "stack_bedrock": "Delta thinly layered",
+      "clay_frac": 1.0,
+      "carb_frac": 0.0,
+      "crism_none_frac": 0.0,
+      "crism_coverage": 1.0,
+      "depot_samples_cored_here": [
+        "Bearwallow",
+        "Skyland"
+      ],
+      "score": 1.15,
+      "px": [
+        700.1,
+        946.2
+      ]
+    },
+    {
+      "sol": 455,
+      "site": 26,
+      "drive": 96,
+      "lon": 77.40627698,
+      "lat": 18.45789036,
+      "dist_to_depot_m": 319,
+      "stack_unit": "Delta thinly layered",
+      "stack_bedrock": "Delta thinly layered",
+      "clay_frac": 1.0,
+      "carb_frac": 0.0,
+      "crism_none_frac": 0.0,
+      "crism_coverage": 1.0,
+      "depot_samples_cored_here": [],
+      "score": 1.0,
+      "px": [
+        707.5,
+        973.0
+      ]
+    },
+    {
+      "sol": 460,
+      "site": 26,
+      "drive": 282,
+      "lon": 77.40644329,
+      "lat": 18.45809645,
+      "dist_to_depot_m": 328,
+      "stack_unit": "Delta thinly layered",
+      "stack_bedrock": "Delta thinly layered",
+      "clay_frac": 1.0,
+      "carb_frac": 0.0,
+      "crism_none_frac": 0.0,
+      "crism_coverage": 1.0,
+      "depot_samples_cored_here": [],
+      "score": 1.0,
+      "px": [
+        712.2,
+        966.9
+      ]
+    },
+    {
+      "sol": 535,
+      "site": 26,
+      "drive": 1652,
+      "lon": 77.40732773,
+      "lat": 18.45835024,
+      "dist_to_depot_m": 331,
+      "stack_unit": "Delta thinly layered",
+      "stack_bedrock": "Delta thinly layered",
+      "clay_frac": 1.0,
+      "carb_frac": 0.0,
+      "crism_none_frac": 0.0,
+      "crism_coverage": 1.0,
+      "depot_samples_cored_here": [],
+      "score": 1.0,
+      "px": [
+        737.0,
+        959.3
+      ]
+    },
+    {
+      "sol": 536,
+      "site": 26,
+      "drive": 2018,
+      "lon": 77.4085763,
+      "lat": 18.45821603,
+      "dist_to_depot_m": 320,
+      "stack_unit": "Delta thinly layered",
+      "stack_bedrock": "Delta thinly layered",
+      "clay_frac": 1.0,
+      "carb_frac": 0.0,
+      "crism_none_frac": 0.0,
+      "crism_coverage": 1.0,
+      "depot_samples_cored_here": [],
+      "score": 1.0,
+      "px": [
+        772.1,
+        963.3
+      ]
+    },
+    {
+      "sol": 537,
+      "site": 26,
+      "drive": 2142,
+      "lon": 77.40884856,
+      "lat": 18.45821029,
+      "dist_to_depot_m": 321,
+      "stack_unit": "Delta thinly layered",
+      "stack_bedrock": "Delta thinly layered",
+      "clay_frac": 1.0,
+      "carb_frac": 0.0,
+      "crism_none_frac": 0.0,
+      "crism_coverage": 1.0,
+      "depot_samples_cored_here": [],
+      "score": 1.0,
+      "px": [
+        779.8,
+        963.5
+      ]
+    },
+    {
+      "sol": 606,
+      "site": 30,
+      "drive": 1096,
+      "lon": 77.39914701,
+      "lat": 18.45353204,
+      "dist_to_depot_m": 511,
+      "stack_unit": "Delta thinly layered",
+      "stack_bedrock": "Delta thinly layered",
+      "clay_frac": 1.0,
+      "carb_frac": 0.0,
+      "crism_none_frac": 0.0,
+      "crism_coverage": 1.0,
+      "depot_samples_cored_here": [],
+      "score": 1.0,
+      "px": [
+        507.0,
+        1102.1
+      ]
+    },
+    {
+      "sol": 629,
+      "site": 30,
+      "drive": 1524,
+      "lon": 77.3995604,
+      "lat": 18.45254963,
+      "dist_to_depot_m": 486,
+      "stack_unit": "Delta thinly layered",
+      "stack_bedrock": "Delta thinly layered",
+      "clay_frac": 1.0,
+      "carb_frac": 0.0,
+      "crism_none_frac": 0.0,
+      "crism_coverage": 1.0,
+      "depot_samples_cored_here": [],
+      "score": 1.0,
+      "px": [
+        518.7,
+        1131.2
+      ]
+    },
+    {
+      "sol": 538,
+      "site": 26,
+      "drive": 2216,
+      "lon": 77.40867746,
+      "lat": 18.45795842,
+      "dist_to_depot_m": 305,
+      "stack_unit": "Delta thinly layered",
+      "stack_bedrock": "Delta thinly layered",
+      "clay_frac": 0.957,
+      "carb_frac": 0.0,
+      "crism_none_frac": 0.043,
+      "crism_coverage": 1.0,
+      "depot_samples_cored_here": [],
+      "score": 0.957,
+      "px": [
+        775.0,
+        970.9
+      ]
+    }
+  ],
+  "depot_samples_cored": [
+    {
+      "name": "Malay",
+      "sample_id": "M2020-00337-08",
+      "cored_sol": 337,
+      "lon": 77.44131402,
+      "lat": 18.43260907
+    },
+    {
+      "name": "Mageik",
+      "sample_id": "M2020-00579-17",
+      "cored_sol": 579,
+      "lon": 77.4014403,
+      "lat": 18.45072631
+    },
+    {
+      "name": "Crosswind Lake",
+      "sample_id": "M2020-00639-21",
+      "cored_sol": 639,
+      "lon": 77.40125715,
+      "lat": 18.45133122
+    },
+    {
+      "name": "Roubion",
+      "sample_id": "M2020-00164-02",
+      "cored_sol": 164,
+      "lon": 77.45164982,
+      "lat": 18.42769464
+    },
+    {
+      "name": "Coulettes",
+      "sample_id": "M2020-00271-06",
+      "cored_sol": 271,
+      "lon": 77.44301922,
+      "lat": 18.43396406
+    },
+    {
+      "name": "Montdenier",
+      "sample_id": "M2020-00190-03",
+      "cored_sol": 190,
+      "lon": 77.44436574,
+      "lat": 18.4307394
+    },
+    {
+      "name": "Bearwallow",
+      "sample_id": "M2020-00516-15",
+      "cored_sol": 516,
+      "lon": 77.40592495,
+      "lat": 18.45864728
+    },
+    {
+      "name": "Skyland",
+      "sample_id": "M2020-00495-12",
+      "cored_sol": 495,
+      "lon": 77.40616768,
+      "lat": 18.45889532
+    },
+    {
+      "name": "Atsah",
+      "sample_id": "M2020-00374-10",
+      "cored_sol": 374,
+      "lon": 77.45243445,
+      "lat": 18.44390163
+    },
+    {
+      "name": "Amalik Witness",
+      "sample_id": "M2020-00586-18",
+      "cored_sol": 586,
+      "lon": 77.4014403,
+      "lat": 18.45072631
+    }
+  ],
+  "criteria": {
+    "stop_a": "Perseverance waypoint sols 400-640, 300-2000 m from depot, Stack Delta bedrock, not on bedforms, ranked by CRISM clay fraction within 75 m (+0.15 if a depot sample was cored there)",
+    "habitat": "CTX mean slope within 100 m <= 2.0 deg, 1000-2000 m from depot, not on bedforms/rocky/delta units, all stops fit the box with a 300 m margin"
+  },
+  "status": "D1 draft; stop A final pick in D3 after HiRISE slope"
+}

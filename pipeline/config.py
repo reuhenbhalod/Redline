@@ -23,7 +23,7 @@ SOURCE_EQC = f"+proj=eqc +lat_ts=0 +lon_0=0 +R={MARS_R} +units=m +no_defs"
 
 def local_crs(lon0: float, lat0: float) -> str:
     """True-scale local grid centered on the box (finding 1)."""
-    return f"+proj=eqc +lat_ts={lat0} +lon_0={lon0} +R={MARS_R} +units=m +no_defs"
+    return f"+proj=eqc +lat_ts={lat0} +lat_0={lat0} +lon_0={lon0} +R={MARS_R} +units=m +no_defs"
 
 # ---- Grid ------------------------------------------------------------------
 BOX_M = 4000          # box side (m)

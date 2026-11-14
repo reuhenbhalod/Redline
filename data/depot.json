@@ -1,0 +1,172 @@
+[
+  {
+    "name": "Malay",
+    "sample_id": "M2020-00337-08",
+    "drop_sol": 653,
+    "drop_lmst": "SOL-0653M13:38:22.157",
+    "lon": 77.40775601,
+    "lat": 18.45262651,
+    "from_waypoint": {
+      "sol": 652,
+      "site": 32,
+      "drive": 148
+    },
+    "px": [
+      749.1,
+      1129.0
+    ]
+  },
+  {
+    "name": "Mageik",
+    "sample_id": "M2020-00579-17",
+    "drop_sol": 655,
+    "drop_lmst": "SOL-0655M13:25:56.560",
+    "lon": 77.40784692,
+    "lat": 18.4525234,
+    "from_waypoint": {
+      "sol": 654,
+      "site": 32,
+      "drive": 250
+    },
+    "px": [
+      751.6,
+      1132.0
+    ]
+  },
+  {
+    "name": "Crosswind Lake",
+    "sample_id": "M2020-00639-21",
+    "drop_sol": 661,
+    "drop_lmst": "SOL-0661M12:48:35.876",
+    "lon": 77.408056,
+    "lat": 18.45267034,
+    "from_waypoint": {
+      "sol": 658,
+      "site": 32,
+      "drive": 378
+    },
+    "px": [
+      757.5,
+      1127.7
+    ]
+  },
+  {
+    "name": "Roubion",
+    "sample_id": "M2020-00164-02",
+    "drop_sol": 666,
+    "drop_lmst": "SOL-0666M13:32:55.072",
+    "lon": 77.40807823,
+    "lat": 18.45276569,
+    "from_waypoint": {
+      "sol": 663,
+      "site": 32,
+      "drive": 482
+    },
+    "px": [
+      758.1,
+      1124.8
+    ]
+  },
+  {
+    "name": "Coulettes",
+    "sample_id": "M2020-00271-06",
+    "drop_sol": 668,
+    "drop_lmst": "SOL-0668M13:23:55.805",
+    "lon": 77.4082,
+    "lat": 18.45272365,
+    "from_waypoint": {
+      "sol": 667,
+      "site": 32,
+      "drive": 580
+    },
+    "px": [
+      761.5,
+      1126.1
+    ]
+  },
+  {
+    "name": "Montdenier",
+    "sample_id": "M2020-00190-03",
+    "drop_sol": 672,
+    "drop_lmst": "SOL-0672M14:09:04.193",
+    "lon": 77.40824352,
+    "lat": 18.45281322,
+    "from_waypoint": {
+      "sol": 670,
+      "site": 32,
+      "drive": 672
+    },
+    "px": [
+      762.8,
+      1123.4
+    ]
+  },
+  {
+    "name": "Bearwallow",
+    "sample_id": "M2020-00516-15",
+    "drop_sol": 675,
+    "drop_lmst": "SOL-0675M13:07:52.470",
+    "lon": 77.40833585,
+    "lat": 18.45272753,
+    "from_waypoint": {
+      "sol": 674,
+      "site": 32,
+      "drive": 774
+    },
+    "px": [
+      765.4,
+      1126.0
+    ]
+  },
+  {
+    "name": "Skyland",
+    "sample_id": "M2020-00495-12",
+    "drop_sol": 680,
+    "drop_lmst": "SOL-0680M12:52:41.778",
+    "lon": 77.4085047,
+    "lat": 18.45300487,
+    "from_waypoint": {
+      "sol": 678,
+      "site": 32,
+      "drive": 896
+    },
+    "px": [
+      770.1,
+      1117.8
+    ]
+  },
+  {
+    "name": "Atsah",
+    "sample_id": "M2020-00374-10",
+    "drop_sol": 682,
+    "drop_lmst": "SOL-0682M14:04:26.386",
+    "lon": 77.40860064,
+    "lat": 18.45306554,
+    "from_waypoint": {
+      "sol": 681,
+      "site": 32,
+      "drive": 1038
+    },
+    "px": [
+      772.8,
+      1116.0
+    ]
+  },
+  {
+    "name": "Amalik Witness",
+    "sample_id": "M2020-00586-18",
+    "drop_sol": 690,
+    "drop_lmst": "SOL-0690M14:36:26.755",
+    "lon": 77.40844668,
+    "lat": 18.45337179,
+    "from_waypoint": {
+      "sol": 686,
+      "site": 32,
+      "drive": 1184
+    },
+    "px": [
+      768.5,
+      1106.9
+    ]
+  }
+]
