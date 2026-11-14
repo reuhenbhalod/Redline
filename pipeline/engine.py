@@ -1,4 +1,4 @@
-"""Route engine: cost grid, legs, route variants, time-home grid.
+"""Route engine: cost grid, legs, route variants, time-home grid, replan options.
 
 Runs offline. Nothing here runs in the browser.
 
@@ -10,16 +10,19 @@ Conventions:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from itertools import combinations
 from pathlib import Path
 
 import numpy as np
-from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import binary_dilation, distance_transform_edt, uniform_filter
 from skimage.draw import line as draw_line
 from skimage.graph import MCP_Geometric
 from skimage.measure import approximate_polygon
 
 import config as default_cfg
+
+HERE = "@"  # pseudo-stop id for "the crew's current position" in mid-leg options
 
 
 # --- Inputs ------------------------------------------------------------------
@@ -27,14 +30,23 @@ import config as default_cfg
 @dataclass
 class Layers:
     """Engine inputs, all the same (H, W) shape and aligned cell for cell."""
-    slope_deg: np.ndarray   # float, degrees; NaN = missing data
-    sand: np.ndarray        # float 0..1, 1 = soft sand
-    rough: np.ndarray       # float 0..1, 1 = very rough ground
-    nogo: np.ndarray        # bool, True = never walk here (data gaps, known hazards)
+    slope_deg: np.ndarray            # float, degrees; NaN = missing data
+    sand: np.ndarray                 # float 0..1, 1 = soft sand
+    rough: np.ndarray                # float 0..1, 1 = very rough ground
+    nogo: np.ndarray                 # bool, True = never walk here (data gaps, known hazards)
+    dtm: np.ndarray | None = None    # float meters (optional): uphill/downhill timing, roughness
 
     @property
     def shape(self):
         return self.slope_deg.shape
+
+
+def roughness_from_dtm(dtm: np.ndarray, win: int = 9) -> np.ndarray:
+    """0..1 roughness: local elevation spread, normalized by its 99th percentile."""
+    z = np.nan_to_num(dtm.astype(np.float64), nan=float(np.nanmean(dtm)))
+    m = uniform_filter(z, win)
+    sd = np.sqrt(np.maximum(uniform_filter(z * z, win) - m * m, 0))
+    return (sd / (np.percentile(sd, 99) + 1e-9)).clip(0, 1).astype(np.float32)
 
 
 def load_layers(grid_dir: str | Path) -> Layers:
@@ -42,27 +54,68 @@ def load_layers(grid_dir: str | Path) -> Layers:
     d = Path(grid_dir)
     slope = np.load(d / "slope_deg.npy").astype(np.float32)
 
-    def opt(name, fill, dtype):
+    def opt(name, dtype):
         p = d / f"{name}.npy"
-        if p.exists():
-            a = np.load(p).astype(dtype)
-            if a.shape != slope.shape:
-                raise ValueError(f"{p} has shape {a.shape}, expected {slope.shape}")
-            return a
-        return np.full(slope.shape, fill, dtype=dtype)
+        if not p.exists():
+            return None
+        a = np.load(p).astype(dtype)
+        if a.shape != slope.shape:
+            raise ValueError(f"{p} has shape {a.shape}, expected {slope.shape}")
+        return a
 
+    dtm = opt("dtm", np.float32)
+    rough = opt("rough", np.float32)
+    if rough is None:
+        rough = roughness_from_dtm(dtm) if dtm is not None else np.zeros_like(slope)
+    sand = opt("sand", np.float32)
+    nogo = opt("nogo", bool)
     return Layers(
         slope_deg=slope,
-        sand=opt("sand", 0.0, np.float32),
-        rough=opt("rough", 0.0, np.float32),
-        nogo=opt("nogo", False, bool),
+        sand=sand if sand is not None else np.zeros_like(slope),
+        rough=rough,
+        nogo=nogo if nogo is not None else np.zeros(slope.shape, bool),
+        dtm=dtm,
     )
+
+
+def validate_layers(layers: Layers, cfg=default_cfg) -> list[str]:
+    """Check value ranges. Raises on hard errors, returns warnings for suspicious data."""
+    warnings = []
+    s = layers.slope_deg
+    fin = np.isfinite(s)
+    if not fin.any():
+        raise ValueError("slope_deg has no valid cells")
+    if s[fin].min() < -1e-3 or s[fin].max() > 90 + 1e-3:
+        raise ValueError(f"slope_deg out of range 0..90 (min {s[fin].min():.2f}, max {s[fin].max():.2f}); is it in radians or percent?")
+    for name in ("sand", "rough"):
+        a = getattr(layers, name)
+        af = a[np.isfinite(a)]
+        if af.size and (af.min() < -1e-3 or af.max() > 1 + 1e-3):
+            warnings.append(f"{name} outside 0..1 (min {af.min():.2f}, max {af.max():.2f}); clipped")
+    if 0 < s[fin].max() < 1.6:
+        warnings.append("slope_deg max is under 1.6; it may be in radians")
+    nogo_frac = blocked_mask(layers, cfg).mean()
+    if nogo_frac > 0.3:
+        warnings.append(f"{nogo_frac:.0%} of the grid is no-go; check thresholds and data gaps")
+    missing = (~fin).mean()
+    if missing > 0.05:
+        warnings.append(f"{missing:.0%} of slope cells are missing data")
+    return warnings
+
+
+def check_bounds(bounds: dict, layers: Layers, cfg=default_cfg) -> None:
+    """Make sure bounds.json describes the same grid the engine is routing on."""
+    h, w = layers.shape
+    if (bounds.get("width_px"), bounds.get("height_px")) != (w, h):
+        raise ValueError(f"bounds.json says {bounds.get('width_px')}x{bounds.get('height_px')}, layers are {w}x{h}")
+    if abs(float(bounds.get("pixel_m", cfg.PIXEL_M)) - cfg.PIXEL_M) > 1e-6:
+        raise ValueError(f"bounds.json pixel_m {bounds.get('pixel_m')} != config PIXEL_M {cfg.PIXEL_M}")
 
 
 # --- Grids -------------------------------------------------------------------
 
 def blocked_mask(layers: Layers, cfg=default_cfg) -> np.ndarray:
-    """True where the crew may never walk."""
+    """True where the ground itself is no-go (before any safety buffer)."""
     s = layers.slope_deg
     return (
         layers.nogo
@@ -73,44 +126,103 @@ def blocked_mask(layers: Layers, cfg=default_cfg) -> np.ndarray:
     )
 
 
-def cost_grid(layers: Layers, cfg=default_cfg) -> np.ndarray:
-    """Walking cost per cell (unitless, >= 1). No-go cells are +inf."""
+def walk_blocked_mask(blocked: np.ndarray, cfg=default_cfg) -> np.ndarray:
+    """No-go grown by the safety buffer, so paths never skim cliff edges."""
+    if cfg.NOGO_BUFFER_PX > 0 and blocked.any():
+        return binary_dilation(blocked, iterations=int(cfg.NOGO_BUFFER_PX))
+    return blocked.copy()
+
+
+def _clean(a):
+    return np.nan_to_num(a, nan=0.0).clip(0, 1)
+
+
+def speed_m_per_min(slope_deg, cfg=default_cfg, sand=0.0, rough=0.0, grade=None):
+    """Suited walking speed (m/min).
+
+    Without `grade`: Tobler shape on the slope magnitude (direction unknown).
+    With `grade` (signed rise over run along the direction of travel): true Tobler,
+    so going uphill is slower than coming down. Normalized so flat ground = V_FLAT_KMH.
+    Sand and rough ground slow the walk further.
+    """
+    v0 = cfg.V_FLAT_KMH * 1000 / 60
+    max_tan = math.tan(math.radians(cfg.SLOPE_HARD_DEG))
+    if grade is None:
+        t = np.tan(np.radians(np.clip(np.nan_to_num(slope_deg, nan=0.0), 0, cfg.SLOPE_HARD_DEG)))
+        f = np.exp(-cfg.TOBLER_K * t)
+    else:
+        g = np.clip(grade, -max_tan, max_tan)
+        f = np.exp(-cfg.TOBLER_K * np.abs(g + cfg.TOBLER_OFFSET)) / math.exp(-cfg.TOBLER_K * cfg.TOBLER_OFFSET)
+    terrain = (1 - cfg.SAND_SLOWDOWN * _clean(sand)) * (1 - cfg.ROUGH_SLOWDOWN * _clean(rough))
+    return v0 * f * terrain
+
+
+@dataclass
+class Terrain:
+    """Everything derived from the layers once, shared by every step."""
+    layers: Layers
+    blocked: np.ndarray        # true no-go
+    walk_blocked: np.ndarray   # no-go + safety buffer
+    cost: np.ndarray           # cost per cell, inf = walk_blocked
+    time: np.ndarray           # minutes per axis-aligned cell step, inf = walk_blocked
+    cfg: object = field(default=default_cfg, repr=False)
+
+    @property
+    def shape(self):
+        return self.layers.shape
+
+
+def build_terrain(layers: Layers, cfg=default_cfg) -> Terrain:
+    blocked = blocked_mask(layers, cfg)
+    walk_blocked = walk_blocked_mask(blocked, cfg)
+    return Terrain(layers, blocked, walk_blocked, _cost(layers, blocked, walk_blocked, cfg),
+                   _time(layers, walk_blocked, cfg), cfg)
+
+
+def _cost(layers, blocked, walk_blocked, cfg):
     slope = np.nan_to_num(layers.slope_deg, nan=0.0)
-    sand = np.nan_to_num(layers.sand, nan=0.0).clip(0, 1)
-    rough = np.nan_to_num(layers.rough, nan=0.0).clip(0, 1)
     cost = (
         1.0
         + cfg.W_SLOPE * (slope / cfg.SLOPE_SOFT_DEG) ** 2
-        + cfg.W_SAND * sand
-        + cfg.W_ROUGH * rough
+        + cfg.W_SAND * _clean(layers.sand)
+        + cfg.W_ROUGH * _clean(layers.rough)
     ).astype(np.float64)
-    cost[blocked_mask(layers, cfg)] = np.inf
+    if cfg.W_MARGIN > 0 and blocked.any():
+        dist = distance_transform_edt(~blocked)
+        cost += cfg.W_MARGIN * np.exp(-dist / cfg.MARGIN_PX)
+    cost[walk_blocked] = np.inf
     return cost
 
 
-def speed_m_per_min(slope_deg, cfg=default_cfg):
-    """Suited walking speed on a slope (Tobler shape, symmetric up/down)."""
-    s = np.clip(np.nan_to_num(slope_deg, nan=0.0), 0, cfg.SLOPE_HARD_DEG)
-    return cfg.V_FLAT_KMH * 1000 / 60 * np.exp(-cfg.TOBLER_K * np.tan(np.radians(s)))
-
-
-def time_grid(layers: Layers, cfg=default_cfg) -> np.ndarray:
-    """Minutes to cross one cell edge-to-edge (axis-aligned). No-go = +inf."""
-    t = (cfg.PIXEL_M / speed_m_per_min(layers.slope_deg, cfg)).astype(np.float64)
-    t[blocked_mask(layers, cfg)] = np.inf
+def _time(layers, walk_blocked, cfg):
+    t = (cfg.PIXEL_M / speed_m_per_min(layers.slope_deg, cfg, layers.sand, layers.rough)).astype(np.float64)
+    t[walk_blocked] = np.inf
     return t
 
 
-def time_home(layers: Layers, habitat_xy, cfg=default_cfg) -> np.ndarray:
+def cost_grid(layers: Layers, cfg=default_cfg) -> np.ndarray:
+    """Walking cost per cell (unitless, >= 1). No-go cells (with buffer) are +inf."""
+    return build_terrain(layers, cfg).cost
+
+
+def time_grid(layers: Layers, cfg=default_cfg) -> np.ndarray:
+    return build_terrain(layers, cfg).time
+
+
+def time_home_from(terrain: Terrain, habitat_xy) -> np.ndarray:
     """Fastest walking time (minutes) from every cell back to the habitat.
 
-    Walking time is symmetric in this model, so a single Dijkstra from the
-    habitat gives the time home from everywhere. Unreachable cells are +inf.
+    Uses the direction-free speed model, so one Dijkstra from the habitat covers
+    every cell. Unreachable cells are +inf.
     """
     x, y = habitat_xy
-    mcp = MCP_Geometric(time_grid(layers, cfg), fully_connected=True)
+    mcp = MCP_Geometric(terrain.time, fully_connected=True)
     minutes, _ = mcp.find_costs([(y, x)])
     return minutes
+
+
+def time_home(layers: Layers, habitat_xy, cfg=default_cfg) -> np.ndarray:
+    return time_home_from(build_terrain(layers, cfg), habitat_xy)
 
 
 def encode_time_home(minutes: np.ndarray, stride: int):
@@ -169,52 +281,94 @@ class Leg:
     distance_m: float
     walk_min: float
     max_slope_deg: float
-    cost: float
 
 
-def path_metrics(path_rc: np.ndarray, layers: Layers, cfg=default_cfg):
-    """Distance (m), walking time (min) and max slope along a cell path."""
+def leg_clock(path_rc: np.ndarray, layers: Layers, cfg=default_cfg) -> np.ndarray:
+    """Cumulative walking minutes at each cell of a full-resolution path.
+
+    With a DTM and ASYMMETRIC_WALK, uses the signed grade along the direction of
+    travel, so the same leg can take different times in each direction.
+    """
     p = np.asarray(path_rc)
     if len(p) < 2:
-        return 0.0, 0.0, float(np.nan_to_num(layers.slope_deg[p[0, 0], p[0, 1]])) if len(p) else 0.0
+        return np.zeros(len(p))
+    r, c = p[:, 0], p[:, 1]
     step_m = np.hypot(*np.diff(p, axis=0).T) * cfg.PIXEL_M
-    s = np.nan_to_num(layers.slope_deg[p[:, 0], p[:, 1]], nan=0.0)
-    seg_slope = (s[:-1] + s[1:]) / 2
-    walk = float(np.sum(step_m / speed_m_per_min(seg_slope, cfg)))
-    return float(step_m.sum()), walk, float(s.max())
+    mid = lambda a: (a[:-1] + a[1:]) / 2
+    slope = mid(np.nan_to_num(layers.slope_deg[r, c], nan=0.0))
+    sand, rough = mid(_clean(layers.sand[r, c])), mid(_clean(layers.rough[r, c]))
+    grade = None
+    if layers.dtm is not None and cfg.ASYMMETRIC_WALK:
+        z = layers.dtm[r, c].astype(np.float64)
+        grade = np.nan_to_num(np.diff(z) / step_m, nan=0.0)
+    v = speed_m_per_min(slope, cfg, sand, rough, grade)
+    return np.r_[0.0, np.cumsum(step_m / v)]
 
 
-def solve_legs(cost: np.ndarray, layers: Layers, stops: dict[str, dict], pairs, cfg=default_cfg) -> dict:
-    """Cheapest path for each (a, b) pair. One Dijkstra per distinct start stop.
+def make_leg(a: str, b: str, path_rc: np.ndarray, layers: Layers, cfg=default_cfg) -> Leg:
+    p = np.asarray(path_rc)
+    dist = float((np.hypot(*np.diff(p, axis=0).T) * cfg.PIXEL_M).sum()) if len(p) > 1 else 0.0
+    smax = float(np.nan_to_num(layers.slope_deg[p[:, 0], p[:, 1]], nan=0.0).max()) if len(p) else 0.0
+    return Leg(a, b, p, dist, float(leg_clock(p, layers, cfg)[-1]) if len(p) else 0.0, smax)
 
-    Cost is isotropic, so (b, a) is (a, b) reversed and is reused.
+
+class LegSolver:
+    """Cheapest paths between stops (and from any point to a stop), solved lazily.
+
+    One Dijkstra per target stop, cached. Cost is direction-free, so the path
+    from X to stop S is the traceback from S to X, reversed. Walking time is
+    recomputed per direction.
     """
-    legs: dict[tuple[str, str], Leg] = {}
-    by_start: dict[str, set[str]] = {}
-    for a, b in pairs:
-        if (b, a) in legs or (a, b) in legs:
-            continue
-        by_start.setdefault(a, set()).add(b)
 
-    for a, ends in by_start.items():
-        ax, ay = stops[a]["px"]
-        mcp = MCP_Geometric(cost, fully_connected=True)
-        cum, _ = mcp.find_costs([(ay, ax)])
-        for b in ends:
-            if (b, a) in legs:
-                continue
-            bx, by = stops[b]["px"]
-            if not np.isfinite(cum[by, bx]):
-                raise RuntimeError(f"no safe path from {a} to {b}")
-            path = np.array(mcp.traceback((by, bx)))
-            dist, walk, smax = path_metrics(path, layers, cfg)
-            legs[(a, b)] = Leg(a, b, path, dist, walk, smax, float(cum[by, bx]))
+    def __init__(self, terrain: Terrain, stops: dict[str, dict]):
+        self.t, self.stops = terrain, stops
+        self._mcp: dict[str, tuple] = {}
+        self.legs: dict[tuple[str, str], Leg] = {}
 
-    for a, b in pairs:
-        if (a, b) not in legs:
-            r = legs[(b, a)]
-            legs[(a, b)] = Leg(a, b, r.path_rc[::-1].copy(), r.distance_m, r.walk_min, r.max_slope_deg, r.cost)
-    return legs
+    def _from(self, sid: str):
+        if sid not in self._mcp:
+            x, y = self.stops[sid]["px"]
+            m = MCP_Geometric(self.t.cost, fully_connected=True)
+            cum, _ = m.find_costs([(y, x)])
+            self._mcp[sid] = (m, cum)
+        return self._mcp[sid]
+
+    def path_to(self, xy, sid: str, label: str = HERE) -> np.ndarray:
+        """Cell path from pixel xy to stop sid."""
+        x, y = xy
+        m, cum = self._from(sid)
+        if not np.isfinite(cum[y, x]):
+            raise RuntimeError(f"no safe path from {label} to {sid}")
+        return np.array(m.traceback((y, x)))[::-1]
+
+    def leg(self, a: str, b: str) -> Leg:
+        if (a, b) not in self.legs:
+            if (b, a) in self.legs:
+                path = self.legs[(b, a)].path_rc[::-1].copy()
+            else:
+                path = self.path_to(self.stops[a]["px"], b, label=a)
+            self.legs[(a, b)] = make_leg(a, b, path, self.t.layers, self.t.cfg)
+        return self.legs[(a, b)]
+
+    def leg_from(self, xy, b: str) -> Leg:
+        return make_leg(HERE, b, self.path_to(xy, b), self.t.layers, self.t.cfg)
+
+
+class _Legs:
+    """Mapping view: extra (point) legs first, then the solver."""
+
+    def __init__(self, solver: LegSolver, extra: dict | None = None):
+        self.solver, self.extra = solver, extra or {}
+
+    def __getitem__(self, key):
+        return self.extra[key] if key in self.extra else self.solver.leg(*key)
+
+
+def solve_legs(cost_or_terrain, layers: Layers, stops: dict[str, dict], pairs, cfg=default_cfg) -> dict:
+    """Back-compat helper: solve the given (a, b) pairs, return {(a, b): Leg}."""
+    terrain = cost_or_terrain if isinstance(cost_or_terrain, Terrain) else build_terrain(layers, cfg)
+    solver = LegSolver(terrain, stops)
+    return {(a, b): solver.leg(a, b) for a, b in pairs}
 
 
 # --- Why-lines ---------------------------------------------------------------
@@ -228,27 +382,31 @@ def compass(dx: float, dy: float) -> str:
     return _COMPASS[int((ang + 22.5) // 45) % 8]
 
 
-def why_lines(leg: Leg, layers: Layers, stops: dict[str, dict], cfg=default_cfg) -> list[str]:
-    """Explain a leg by comparing it to the straight line between its stops."""
+def _name(stops, sid):
+    return "your position" if sid == HERE else stops[sid].get("name", sid)
+
+
+def why_items(leg: Leg, terrain: Terrain, stops: dict[str, dict]) -> list[tuple[float, str]]:
+    """(meters avoided, sentence) pairs explaining a leg against the straight line."""
+    cfg, layers = terrain.cfg, terrain.layers
     ax, ay = stops[leg.a]["px"]
     bx, by = stops[leg.b]["px"]
-    rr, cc = draw_line(ay, ax, by, bx)
     straight_m = math.hypot(bx - ax, by - ay) * cfg.PIXEL_M
     if straight_m == 0:
         return []
+    rr, cc = draw_line(ay, ax, by, bx)
     m_per_line_cell = straight_m / max(len(rr) - 1, 1)
 
-    blocked = blocked_mask(layers, cfg)
+    blocked = terrain.blocked
     slope = np.nan_to_num(layers.slope_deg, nan=90.0)
     hazards = [
         ("no-go ground", blocked),
         ("steep slope", (slope >= cfg.SLOPE_SOFT_DEG) & ~blocked),
         ("soft sand", (np.nan_to_num(layers.sand) >= cfg.SAND_SOFT_MIN) & ~blocked),
     ]
-
     pr, pc = leg.path_rc[:, 0], leg.path_rc[:, 1]
     step_m = np.r_[0, np.hypot(*np.diff(leg.path_rc, axis=0).T)] * cfg.PIXEL_M
-    name = lambda sid: stops[sid].get("name", sid)
+    arrow = f"{leg.a}→{leg.b}" if leg.a != HERE else f"→{leg.b}"
     out = []
     for label, mask in hazards:
         on_line = mask[rr, cc]
@@ -256,42 +414,54 @@ def why_lines(leg: Leg, layers: Layers, stops: dict[str, dict], cfg=default_cfg)
         route_m = step_m[mask[pr, pc]].sum()
         if line_m - route_m < cfg.WHY_MIN_M:
             continue
-        # Where is the avoided hazard? Relative to whichever stop is closer.
         hy, hx = rr[on_line].mean(), cc[on_line].mean()
         ref = leg.a if math.hypot(hx - ax, hy - ay) <= math.hypot(hx - bx, hy - by) else leg.b
         rx, ry = stops[ref]["px"]
-        where = compass(hx - rx, hy - ry)
+        where = f"{compass(hx - rx, hy - ry)} of {_name(stops, ref)}"
+        if math.hypot(hx - rx, hy - ry) * cfg.PIXEL_M < 15:
+            where = f"at {_name(stops, ref)}"
         if route_m < 1:
-            out.append(f"{leg.a}→{leg.b}: avoids {line_m:.0f} m of {label} {where} of {name(ref)}")
+            out.append((line_m - route_m, f"{arrow}: avoids {line_m:.0f} m of {label} {where}"))
         else:
-            out.append(
-                f"{leg.a}→{leg.b}: cuts {label} from {line_m:.0f} m on the direct line to "
-                f"{route_m:.0f} m ({where} of {name(ref)})"
-            )
-
+            out.append((line_m - route_m,
+                        f"{arrow}: cuts {label} from {line_m:.0f} m on the direct line to {route_m:.0f} m ({where})"))
     extra = leg.distance_m / straight_m - 1
     if not out:
-        out.append(f"{leg.a}→{leg.b}: nearly direct, {extra:.0%} longer than a straight line")
+        out.append((0.0, f"{arrow}: nearly direct, {extra:.0%} longer than a straight line"))
     else:
-        out.append(f"{leg.a}→{leg.b}: detour adds {leg.distance_m - straight_m:.0f} m ({extra:.0%})")
+        out.append((0.0, f"{arrow}: detour adds {leg.distance_m - straight_m:.0f} m ({extra:.0%})"))
     return out
 
+
+def why_lines(leg: Leg, layers_or_terrain, stops: dict[str, dict], cfg=default_cfg) -> list[str]:
+    terrain = layers_or_terrain if isinstance(layers_or_terrain, Terrain) else build_terrain(layers_or_terrain, cfg)
+    return [t for _, t in why_items(leg, terrain, stops)]
+
+
+def route_why(seq: list[str], legs, terrain: Terrain, stops: dict, summary: str | None = None):
+    """(why, why_detail): a short list (summary + biggest hazards) and every line."""
+    items, seen = [], set()
+    for a, b in zip(seq, seq[1:]):
+        if (b, a) in seen or (a, b) in seen:  # same leg walked back
+            continue
+        seen.add((a, b))
+        items.extend(why_items(legs[(a, b)], terrain, stops))
+    detail = [t for _, t in items]
+    top = [t for s, t in sorted(items, key=lambda it: -it[0]) if s > 0]
+    head = [summary] if summary else []
+    n = terrain.cfg.WHY_MAX_LINES - len(head)
+    why = head + (top[:n] if top else detail[:n])
+    return why, detail
 
 
 # --- Route assembly and timelines --------------------------------------------
 
-def leg_clock(path_rc: np.ndarray, layers: Layers, cfg=default_cfg) -> np.ndarray:
-    """Cumulative walking minutes at each cell of a full-resolution path."""
-    p = np.asarray(path_rc)
-    if len(p) < 2:
-        return np.zeros(len(p))
-    step_m = np.hypot(*np.diff(p, axis=0).T) * cfg.PIXEL_M
-    s = np.nan_to_num(layers.slope_deg[p[:, 0], p[:, 1]], nan=0.0)
-    return np.r_[0.0, np.cumsum(step_m / speed_m_per_min((s[:-1] + s[1:]) / 2, cfg))]
+def simplify_idx(path_rc: np.ndarray, tol: float, blocked: np.ndarray | None = None) -> np.ndarray:
+    """Indices of the path cells kept by Douglas-Peucker simplification.
 
-
-def simplify_idx(path_rc: np.ndarray, tol: float) -> np.ndarray:
-    """Indices of the path cells kept by Douglas-Peucker simplification."""
+    With `blocked`, any simplified segment that would cut a blocked cell is split
+    until it doesn't, so the drawn route never crosses no-go ground.
+    """
     p = np.asarray(path_rc)
     if tol <= 0 or len(p) <= 2:
         return np.arange(len(p))
@@ -303,7 +473,24 @@ def simplify_idx(path_rc: np.ndarray, tol: float) -> np.ndarray:
         if j == len(p):
             raise RuntimeError("simplified vertex is not on the path")
         idx.append(j)
-    return np.array(idx)
+    if blocked is None:
+        return np.array(idx)
+
+    out = [idx[0]]
+
+    def refine(i, k):
+        if k - i > 1:
+            rr, cc = draw_line(p[i, 0], p[i, 1], p[k, 0], p[k, 1])
+            if blocked[rr, cc].any():
+                m = (i + k) // 2
+                refine(i, m)
+                refine(m, k)
+                return
+        out.append(k)
+
+    for i, k in zip(idx, idx[1:]):
+        refine(i, k)
+    return np.array(out)
 
 
 def _home_at(th: np.ndarray, x: int, y: int):
@@ -311,14 +498,15 @@ def _home_at(th: np.ndarray, x: int, y: int):
     return round(float(v), 1) if np.isfinite(v) else None
 
 
-def assemble(seq: list[str], legs: dict, layers: Layers, stops: dict, th: np.ndarray,
-             cfg=default_cfg, work_first: float = 0.0) -> dict:
+def assemble(seq: list[str], legs, terrain: Terrain, stops: dict, th: np.ndarray,
+             work_first: float = 0.0) -> dict:
     """Join legs into one timed route starting at clock 0 at seq[0].
 
     The crew dwells `work_first` minutes at seq[0], then the stop's work time at each
     intermediate stop. A dwell is written as the stop point repeated with a later time,
     so linear interpolation of position over `t_min` keeps the crew still while working.
     """
+    cfg, layers = terrain.cfg, terrain.layers
     path, t_min, home_min, leg_out, stop_plan = [], [], [], [], []
     clock = 0.0
 
@@ -341,7 +529,7 @@ def assemble(seq: list[str], legs: dict, layers: Layers, stops: dict, th: np.nda
         leg = legs[(a, b)]
         cum = leg_clock(leg.path_rc, layers, cfg)
         start = len(path) - 1
-        for i in simplify_idx(leg.path_rc, cfg.PATH_SIMPLIFY_PX)[1:]:
+        for i in simplify_idx(leg.path_rc, cfg.PATH_SIMPLIFY_PX, terrain.walk_blocked)[1:]:
             r, c = leg.path_rc[i]
             add(c, r, clock + cum[i])
         clock += float(cum[-1])
@@ -368,17 +556,8 @@ def assemble(seq: list[str], legs: dict, layers: Layers, stops: dict, th: np.nda
         "path": path, "t_min": t_min, "home_min": home_min,
         "legs": leg_out, "stop_plan": stop_plan,
         "distance_m": round(dist, 1), "walk_min": round(walk, 1), "total_min": round(clock, 1),
+        "max_slope_deg": round(max((l["max_slope_deg"] for l in leg_out), default=0.0), 1),
     }
-
-
-def route_why(seq: list[str], legs: dict, layers: Layers, stops: dict, cfg=default_cfg) -> list[str]:
-    why, seen = [], set()
-    for a, b in zip(seq, seq[1:]):
-        if (b, a) in seen or (a, b) in seen:  # same leg walked back
-            continue
-        seen.add((a, b))
-        why.extend(why_lines(legs[(a, b)], layers, stops, cfg))
-    return why
 
 
 # --- Replan options -----------------------------------------------------------
@@ -393,8 +572,6 @@ def replan_specs(seq: list[str], stops: dict, cfg=default_cfg) -> list[dict]:
       abort     - walk straight home (drops everything left, depot included)
     Depot stops and depot work are never dropped except by abort.
     """
-    from itertools import combinations
-
     out = []
     for i, here in enumerate(seq[:-1]):
         rest = seq[i + 1:]
@@ -414,22 +591,29 @@ def replan_specs(seq: list[str], stops: dict, cfg=default_cfg) -> list[dict]:
     return out
 
 
-def build_option(spec: dict, here: str, planned_min: float, legs, layers, stops, th, cfg) -> dict:
-    r = assemble(spec["seq"], legs, layers, stops, th, cfg, work_first=spec["work_here"])
-    name = lambda s: stops[s].get("name", s)
-    saves = 0.0 if spec["kind"] == "planned" else round(planned_min - r["total_min"], 1)
+def _option_head(spec, here, saves, stops, cfg):
+    name = lambda s: _name(stops, s)
     kind = spec["kind"]
     if kind == "planned":
-        head = "Continue as planned"
-    elif kind == "skip_work":
-        head = f"Cut the {work_min(stops[here], cfg):.0f}-min work at {name(here)}, saves {saves:.0f} min"
-    elif kind == "drop":
-        head = f"Drop {', '.join(name(s) for s in spec['dropped'])}, saves {saves:.0f} min"
-    else:
-        dropped = ", ".join(name(s) for s in spec["dropped"])
-        head = f"Abort: walk straight home from {name(here)}, drops {dropped}"
+        return "Continue as planned"
+    if kind == "skip_work":
+        return f"Cut the {work_min(stops[here], cfg):.0f}-min work at {name(here)}, saves {saves:.0f} min"
+    if kind == "drop":
+        return f"Drop {', '.join(name(s) for s in spec['dropped'])}, saves {saves:.0f} min"
+    dropped = ", ".join(name(s) for s in spec["dropped"])
+    return f"Abort: walk straight home from {name(here)}" + (f", drops {dropped}" if dropped else "")
+
+
+def build_option(spec: dict, here: str, planned_min: float, legs, terrain, stops, th) -> dict:
+    cfg = terrain.cfg
+    r = assemble(spec["seq"], legs, terrain, stops, th, work_first=spec["work_here"])
+    saves = 0.0 if spec["kind"] == "planned" else round(planned_min - r["total_min"], 1)
+    head = _option_head(spec, here, saves, stops, cfg)
+    why = [head]
+    if spec["kind"] != "planned":
+        why += route_why(spec["seq"], legs, terrain, stops)[0][: cfg.WHY_MAX_LINES - 1]
     return {
-        "kind": kind,
+        "kind": spec["kind"],
         "stops": spec["seq"],
         "work_here_min": spec["work_here"],
         "minutes": r["total_min"],
@@ -438,17 +622,155 @@ def build_option(spec: dict, here: str, planned_min: float, legs, layers, stops,
         "path": r["path"],
         "t_min": r["t_min"],
         "home_min": r["home_min"],
-        "abort": kind == "abort",
-        "why": [head] + ([] if kind == "planned" else route_why(spec["seq"], legs, layers, stops, cfg)),
+        "abort": spec["kind"] == "abort",
+        "why": why,
+    }
+
+
+def _order(opts):
+    """Planned first, then longest to shortest, abort last."""
+    return [opts[0]] + sorted([o for o in opts[1:] if not o["abort"]], key=lambda o: -o["minutes"]) \
+        + [o for o in opts if o["abort"]]
+
+
+def checkpoints(r: dict, seq: list[str], solver: LegSolver, terrain: Terrain, stops: dict, th) -> list[dict]:
+    """Mid-leg decision points every CHECKPOINT_MIN planned minutes while walking.
+
+    Options mirror the stop-level ones, starting from the crew's position:
+    planned (no path; it is the rest of the main path), drop (skip upcoming
+    science stops), abort (head home now).
+    """
+    cfg = terrain.cfg
+    if not cfg.CHECKPOINT_MIN:
+        return []
+    path, t = r["path"], r["t_min"]
+    total, home = r["total_min"], seq[-1]
+    out, k = [], 1
+    while k * cfg.CHECKPOINT_MIN < total:
+        target = k * cfg.CHECKPOINT_MIN
+        k += 1
+        # segment j -> j+1 that contains the target time; skip work dwells (repeated point)
+        j = max(jj for jj in range(len(t) - 1) if t[jj] <= target)
+        if path[j] == path[j + 1] or t[j + 1] <= t[j]:
+            continue
+        f = (target - t[j]) / (t[j + 1] - t[j])
+        xy = [int(round(path[j][0] + f * (path[j + 1][0] - path[j][0]))),
+              int(round(path[j][1] + f * (path[j + 1][1] - path[j][1])))]
+        if terrain.walk_blocked[xy[1], xy[0]]:
+            xy = path[j]
+        i = j
+        ahead = [sp["id"] for sp in r["stop_plan"] if sp["path_index"] > i]
+        xy = path[i]
+        here_stops = {**stops, HERE: {"id": HERE, "name": "your position", "px": xy, "kind": "point"}}
+        planned_min = round(total - target, 1)
+        specs = []
+        kept = [s for s in ahead if stops[s].get("kind") != "science"]
+        if kept != ahead:
+            specs.append({"kind": "drop", "seq": [HERE] + kept, "work_here": 0.0,
+                          "dropped": [s for s in ahead if s not in kept]})
+        if ahead != [home]:
+            specs.append({"kind": "abort", "seq": [HERE, home], "work_here": 0.0, "dropped": ahead[:-1]})
+        extra = {(HERE, s["seq"][1]): solver.leg_from(xy, s["seq"][1]) for s in specs}
+        legs = _Legs(solver, extra)
+        opts = [{"kind": "planned", "stops": [HERE] + ahead, "minutes": planned_min, "saves_min": 0.0,
+                 "from_path_index": i, "abort": False, "why": ["Continue as planned"]}]
+        opts += [build_option(s, HERE, planned_min, legs, terrain, here_stops, th) for s in specs]
+        out.append({"path_index": i, "t_min": round(float(target), 2), "px": xy, "next_stop": ahead[0],
+                    "options": _order(opts)})
+    return out
+
+
+def hazard_demo(r: dict, spec: dict, solver: LegSolver, terrain: Terrain, stops: dict, th) -> dict | None:
+    """Simulate the rover camera confirming a rock field ahead on one leg.
+
+    `at_frac` is where along the leg the hazard sits: a number, or a list of
+    candidates, in which case the one causing the longest detour is used (so the
+    demo reroute is visible). The reroute starts `warn_m` before the hazard (the
+    rover scouts ~100 m ahead) and goes to the leg's end stop.
+    """
+    fracs = spec["at_frac"] if isinstance(spec["at_frac"], (list, tuple)) else [spec["at_frac"]]
+    best = None
+    for f in fracs:
+        d = _hazard_at(r, {**spec, "at_frac": f}, solver, terrain, stops, th)
+        if d and (best is None or d["extra_min"] > best["extra_min"]):
+            best = d
+    return best
+
+
+def _hazard_at(r: dict, spec: dict, solver: LegSolver, terrain: Terrain, stops: dict, th) -> dict | None:
+    cfg = terrain.cfg
+    a, b = spec["leg"]
+    leg = next((l for l in r["legs"] if (l["from"], l["to"]) == (a, b)), None)
+    if leg is None:
+        return None
+    s, e = leg["path_start"], leg["path_end"]
+    pts = np.array(r["path"][s:e + 1], dtype=float)
+    seg = np.hypot(*np.diff(pts, axis=0).T) * cfg.PIXEL_M
+    cum = np.r_[0, np.cumsum(seg)]
+    if cum[-1] == 0:
+        return None
+    d_haz = spec["at_frac"] * cum[-1]
+    j = int(np.searchsorted(cum, d_haz))
+    j = min(max(j, 1), len(pts) - 1)
+    f = (d_haz - cum[j - 1]) / max(seg[j - 1], 1e-9)
+    hx, hy = pts[j - 1] + f * (pts[j] - pts[j - 1])
+    radius_px = spec["radius_m"] / cfg.PIXEL_M
+    trig = int(np.searchsorted(cum, max(d_haz - spec["warn_m"] - spec["radius_m"], 0), side="right")) - 1
+    trig = max(trig, 0)
+    ti = s + trig
+    tx, ty = r["path"][ti]
+
+    h, w = terrain.shape
+    y0, y1 = int(max(hy - radius_px - 1, 0)), int(min(hy + radius_px + 2, h))
+    x0, x1 = int(max(hx - radius_px - 1, 0)), int(min(hx + radius_px + 2, w))
+    yy, xx = np.mgrid[y0:y1, x0:x1]
+    disk = (xx - hx) ** 2 + (yy - hy) ** 2 <= radius_px ** 2
+    cost2 = terrain.cost.copy()
+    cost2[y0:y1, x0:x1][disk] = np.inf
+    bx, by = stops[b]["px"]
+    m = MCP_Geometric(cost2, fully_connected=True)
+    cumc, _ = m.find_costs([(by, bx)])
+    if not np.isfinite(cumc[ty, tx]) or (tx - hx) ** 2 + (ty - hy) ** 2 <= radius_px ** 2:
+        return None
+    detour = make_leg(HERE, b, np.array(m.traceback((ty, tx)))[::-1], terrain.layers, cfg)
+    here_stops = {**stops, HERE: {"id": HERE, "name": "your position", "px": [tx, ty], "kind": "point"}}
+    rr = assemble([HERE, b], {(HERE, b): detour}, terrain, here_stops, th)
+    arrive_b = next(sp["arrive_min"] for sp in r["stop_plan"] if sp["path_index"] == e)
+    planned = round(arrive_b - r["t_min"][ti], 1)
+    full = solver.leg(a, b).path_rc  # measure the planned remainder on the same full-res cells
+    k = int(np.flatnonzero((full[:, 0] == ty) & (full[:, 1] == tx))[0])
+    planned_m = float((np.hypot(*np.diff(full[k:], axis=0).T) * cfg.PIXEL_M).sum())
+    extra_min = round(rr["total_min"] - planned, 1)
+    extra_m = round(detour.distance_m - planned_m, 1)
+    return {
+        "leg": [a, b],
+        "at_frac": spec["at_frac"],
+        "hazard_px": [round(float(hx), 1), round(float(hy), 1)],
+        "radius_px": round(radius_px, 1),
+        "trigger_path_index": ti,
+        "trigger_t_min": r["t_min"][ti],
+        "trigger_px": [tx, ty],
+        "rejoin_path_index": e,
+        "path": rr["path"], "t_min": rr["t_min"], "home_min": rr["home_min"],
+        "minutes": rr["total_min"], "planned_minutes": planned,
+        "extra_min": extra_min, "extra_m": extra_m,
+        "why": [f"Rover camera confirmed a rock field {spec['warn_m']:.0f} m ahead on {_name(stops, a)}→{_name(stops, b)} "
+                f"(3 frames)", f"Detour to {_name(stops, b)} adds {max(extra_m, 0):.0f} m and {max(extra_min, 0):.0f} min",
+                "Orbital hazards stay on the map; camera detections only add hazards"],
     }
 
 
 # --- Variants -----------------------------------------------------------------
 
-def build_variant(vdef: dict, specs: list[dict], legs: dict, layers: Layers, stops: dict,
-                  th: np.ndarray, cfg=default_cfg) -> dict:
+def _summary(r, est_min):
+    return (f"{r['distance_m'] / 1000:.1f} km, {est_min:.0f} min, steepest {r['max_slope_deg']:.0f}°")
+
+
+def build_variant(vdef: dict, solver: LegSolver, terrain: Terrain, stops: dict, th: np.ndarray) -> dict:
+    cfg = terrain.cfg
     seq = vdef["stops"]
-    r = assemble(seq, legs, layers, stops, th, cfg)
+    legs = _Legs(solver)
+    r = assemble(seq, legs, terrain, stops, th)
     total = r["total_min"]
     for sp in r["stop_plan"]:
         x, y = stops[sp["id"]]["px"]
@@ -456,32 +778,38 @@ def build_variant(vdef: dict, specs: list[dict], legs: dict, layers: Layers, sto
         sp["remaining_min"] = round(max(total - sp["arrive_min"], 0.0), 1)
 
     replan = []
-    for d in specs:
+    for d in replan_specs(seq, stops, cfg):
         sp = r["stop_plan"][d["index"]]
         planned = sp["remaining_min"]
-        opts = [build_option(o, d["at"], planned, legs, layers, stops, th, cfg) for o in d["options"]]
-        # planned first, then longest to shortest, abort last
-        opts = [opts[0]] + sorted([o for o in opts[1:] if not o["abort"]], key=lambda o: -o["minutes"]) \
-            + [o for o in opts if o["abort"]]
-        replan.append({"at": d["at"], "stop_index": d["index"], "path_index": sp["path_index"], "options": opts})
+        opts = [build_option(o, d["at"], planned, legs, terrain, stops, th) for o in d["options"]]
+        replan.append({"at": d["at"], "stop_index": d["index"], "path_index": sp["path_index"],
+                       "options": _order(opts)})
 
-    work_total = sum(work_min(stops[s], cfg) for s in seq[1:-1])
-    return {
+    why, detail = route_why(seq, legs, terrain, stops, summary=_summary(r, total))
+    out = {
         "id": vdef["id"],
         "stops": seq,
         "distance_m": r["distance_m"],
         "est_min": total,
         "walk_min": r["walk_min"],
-        "work_min": round(work_total, 1),
-        "max_slope_deg": round(max(l["max_slope_deg"] for l in r["legs"]), 1),
+        "work_min": round(sum(work_min(stops[s], cfg) for s in seq[1:-1]), 1),
+        "max_slope_deg": r["max_slope_deg"],
         "path": r["path"],
         "t_min": r["t_min"],
         "home_min": r["home_min"],
         "legs": r["legs"],
         "stop_plan": r["stop_plan"],
         "replan": replan,
-        "why": route_why(seq, legs, layers, stops, cfg),
+        "checkpoints": checkpoints(r, seq, solver, terrain, stops, th),
+        "why": why,
+        "why_detail": detail,
     }
+    hz = cfg.HAZARD_DEMO
+    if hz and hz.get("variant") == vdef["id"]:
+        demo = hazard_demo(r, hz, solver, terrain, stops, th)
+        if demo:
+            out["hazard_demo"] = demo
+    return out
 
 
 REPLAN_RULE = (
@@ -490,15 +818,22 @@ REPLAN_RULE = (
     "linearly over t_min (a repeated point is a work stop). When the crew arrives at a stop at actual "
     "time T, look up replan[] for that stop and take the first option where "
     "T + option.minutes + reserve <= budget (options are ordered planned first, abort last). If none "
-    "fits, take the abort option. An option's t_min is relative to arrival at that stop: add T."
+    "fits, take the abort option. An option's t_min is relative to arrival at that stop: add T. "
+    "checkpoints[] apply the same rule mid-leg when the crew passes path_index at actual time T; "
+    "checkpoint px lies on the segment path[path_index] -> path[path_index + 1] at t_min; its "
+    "'planned' option has no path (it is the rest of the main path from that point). "
+    "hazard_demo (optional) is a scripted rover-camera reroute: when the crew reaches "
+    "trigger_path_index, offer its path (t_min relative to that moment), which rejoins the plan at "
+    "rejoin_path_index."
 )
 
 
 def plan_routes(layers: Layers, stops_list: list[dict], cfg=default_cfg):
     """Run the whole engine. Returns (routes, time_home_bytes, time_home_grid, stops_list, legs)."""
-    blocked = blocked_mask(layers, cfg)
+    warnings = validate_layers(layers, cfg)
+    terrain = build_terrain(layers, cfg)
     stops_list = [dict(s) for s in stops_list]
-    warnings = snap_stops(stops_list, blocked)
+    warnings += snap_stops(stops_list, terrain.walk_blocked)
     stops = {s["id"]: s for s in stops_list}
 
     variants = []
@@ -511,15 +846,10 @@ def plan_routes(layers: Layers, stops_list: list[dict], cfg=default_cfg):
     if not variants:
         raise ValueError("no route variant has all its stops in stops.json")
 
-    specs = {v["id"]: replan_specs(v["stops"], stops, cfg) for v in variants}
-    seqs = [v["stops"] for v in variants] + [o["seq"] for s in specs.values() for d in s for o in d["options"]]
-    pairs = {(a, b) for seq in seqs for a, b in zip(seq, seq[1:])}
-
-    cost = cost_grid(layers, cfg)
-    legs = solve_legs(cost, layers, stops, sorted(pairs), cfg)
-    th = time_home(layers, stops[cfg.HABITAT_ID]["px"], cfg)
+    solver = LegSolver(terrain, stops)
+    th = time_home_from(terrain, stops[cfg.HABITAT_ID]["px"])
     th_bytes, th_meta = encode_time_home(th, cfg.TIME_HOME_STRIDE)
-    out_variants = [build_variant(v, specs[v["id"]], legs, layers, stops, th, cfg) for v in variants]
+    out_variants = [build_variant(v, solver, terrain, stops, th) for v in variants]
 
     routes = {
         "variants": out_variants,
@@ -531,15 +861,163 @@ def plan_routes(layers: Layers, stops_list: list[dict], cfg=default_cfg):
             "pixel_m": cfg.PIXEL_M,
             "slope_soft_deg": cfg.SLOPE_SOFT_DEG,
             "slope_hard_deg": cfg.SLOPE_HARD_DEG,
-            "weights": {"slope": cfg.W_SLOPE, "sand": cfg.W_SAND, "rough": cfg.W_ROUGH},
+            "nogo_buffer_m": cfg.NOGO_BUFFER_PX * cfg.PIXEL_M,
+            "weights": {"slope": cfg.W_SLOPE, "sand": cfg.W_SAND, "rough": cfg.W_ROUGH, "margin": cfg.W_MARGIN},
             "v_flat_kmh": cfg.V_FLAT_KMH,
+            "sand_slowdown": cfg.SAND_SLOWDOWN,
+            "rough_slowdown": cfg.ROUGH_SLOWDOWN,
+            "asymmetric_walk": bool(layers.dtm is not None and cfg.ASYMMETRIC_WALK),
         },
         "assumptions": [
             f"Slope above {cfg.SLOPE_SOFT_DEG:g}° is costly and {cfg.SLOPE_HARD_DEG:g}° or more is no-go",
-            f"Suited walking speed {cfg.V_FLAT_KMH:g} km/h on flat ground, slower on slopes (Tobler-style)",
+            f"Routes keep {cfg.NOGO_BUFFER_PX * cfg.PIXEL_M:g} m away from no-go ground",
+            f"Suited walking speed {cfg.V_FLAT_KMH:g} km/h on flat ground, slower on slopes (Tobler-style), "
+            f"up to {cfg.SAND_SLOWDOWN:.0%} slower in soft sand",
             "Cost weights are tuning knobs, not physics",
-            "Walking time is the same in both directions on a slope",
+            "Time to walk home ignores uphill vs downhill" + (
+                "; leg times include it" if layers.dtm is not None and cfg.ASYMMETRIC_WALK else ""),
         ],
         "warnings": warnings,
     }
-    return routes, th_bytes.tobytes(), th, stops_list, legs
+    return routes, th_bytes.tobytes(), th, stops_list, solver.legs
+
+
+# --- Output checks -------------------------------------------------------------
+
+def _check_timed(obj, where, w, h, errors, need_path=True):
+    path, t, home = obj.get("path"), obj.get("t_min"), obj.get("home_min")
+    if not need_path and path is None:
+        return
+    if not isinstance(path, list) or not path:
+        errors.append(f"{where}: path missing or empty")
+        return
+    if not (len(path) == len(t or []) == len(home or [])):
+        errors.append(f"{where}: path/t_min/home_min lengths differ ({len(path)}/{len(t or [])}/{len(home or [])})")
+    for p in path:
+        if not (isinstance(p, list) and len(p) == 2 and all(isinstance(c, int) for c in p)
+                and 0 <= p[0] < w and 0 <= p[1] < h):
+            errors.append(f"{where}: bad path point {p}")
+            break
+    if t and any(b < a for a, b in zip(t, t[1:])):
+        errors.append(f"{where}: t_min is not non-decreasing")
+
+
+def validate_routes(routes: dict, grid_wh: tuple[int, int]) -> list[str]:
+    """Contract check for routes.json. Returns a list of errors (empty = OK)."""
+    w, h = grid_wh
+    errors = []
+    for key in ("variants", "time_home_file", "time_home", "replan_rule"):
+        if key not in routes:
+            errors.append(f"missing top-level key {key}")
+    for v in routes.get("variants", []):
+        vid = v.get("id", "?")
+        for key in ("id", "stops", "distance_m", "est_min", "path", "why", "t_min", "home_min",
+                    "stop_plan", "replan", "legs"):
+            if key not in v:
+                errors.append(f"variant {vid}: missing {key}")
+        _check_timed(v, f"variant {vid}", w, h, errors)
+        if v.get("t_min") and abs(v["t_min"][-1] - v.get("est_min", 0)) > 0.2:
+            errors.append(f"variant {vid}: t_min ends at {v['t_min'][-1]} but est_min is {v.get('est_min')}")
+        for d in v.get("replan", []):
+            for o in d.get("options", []):
+                _check_timed(o, f"variant {vid} replan@{d.get('at')} {o.get('kind')}", w, h, errors)
+        for c in v.get("checkpoints", []):
+            for o in c.get("options", []):
+                _check_timed(o, f"variant {vid} checkpoint@{c.get('path_index')} {o.get('kind')}", w, h, errors,
+                             need_path=False)
+        if "hazard_demo" in v:
+            _check_timed(v["hazard_demo"], f"variant {vid} hazard_demo", w, h, errors)
+    return errors
+
+
+# --- Finishing and writing -----------------------------------------------------
+
+def finalize(routes: dict, budget: float, reserve: float) -> dict:
+    for v in routes["variants"]:
+        v["fits_budget"] = bool(v["est_min"] + reserve <= budget)
+    routes["params"]["suit_budget_min"] = budget
+    routes["params"]["suit_reserve_min"] = reserve
+    return routes
+
+
+def write_outputs(out_dir, routes: dict, th_bytes: bytes, grid_wh, cfg=default_cfg) -> int:
+    """Validate, then write routes.json and time_home.bin. Returns routes.json size in bytes."""
+    import json
+    errors = validate_routes(routes, grid_wh)
+    if errors:
+        raise ValueError("routes.json failed the contract check:\n  " + "\n  ".join(errors[:20]))
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(routes, separators=(",", ":"), ensure_ascii=False)
+    if len(text) > cfg.MAX_ROUTES_KB * 1024:
+        routes.setdefault("warnings", []).append(
+            f"routes.json is {len(text) / 1024:.0f} KB (limit {cfg.MAX_ROUTES_KB} KB); raise PATH_SIMPLIFY_PX or CHECKPOINT_MIN")
+        text = json.dumps(routes, separators=(",", ":"), ensure_ascii=False)
+    (out / "routes.json").write_text(text)
+    (out / "time_home.bin").write_bytes(th_bytes)
+    return len(text)
+
+
+# --- Coarse-grid fallback ------------------------------------------------------
+
+def config_copy(cfg=default_cfg, **overrides):
+    from types import SimpleNamespace
+    d = {k: getattr(cfg, k) for k in dir(cfg) if k.isupper()}
+    d.update(overrides)
+    return SimpleNamespace(**d)
+
+
+def coarsen_layers(layers: Layers, k: int) -> Layers:
+    """Block-reduce by k: slope takes the max (never hides a cliff), sand/rough/dtm the mean, no-go any."""
+    h, w = layers.shape
+    H, W = h // k, w // k
+
+    def blocks(a):
+        return a[: H * k, : W * k].reshape(H, k, W, k)
+
+    return Layers(
+        slope_deg=blocks(layers.slope_deg).max(axis=(1, 3)),
+        sand=blocks(layers.sand).mean(axis=(1, 3)),
+        rough=blocks(layers.rough).mean(axis=(1, 3)),
+        nogo=blocks(layers.nogo).any(axis=(1, 3)),
+        dtm=None if layers.dtm is None else blocks(layers.dtm).mean(axis=(1, 3)),
+    )
+
+
+_PX_KEYS = {"path", "px", "hazard_px", "trigger_px"}
+
+
+def scale_routes(obj, k: int):
+    """Scale every pixel coordinate in a routes dict from a coarse grid back to the full grid."""
+    if isinstance(obj, dict):
+        for key, v in obj.items():
+            if key in _PX_KEYS and isinstance(v, list):
+                if v and isinstance(v[0], list):
+                    obj[key] = [[c * k + k // 2 for c in p] for p in v]
+                else:
+                    obj[key] = [c * k + k // 2 for c in v]
+            elif key == "stops_px":
+                obj[key] = {s: [c * k + k // 2 for c in p] for s, p in v.items()}
+            elif key == "radius_px":
+                obj[key] = round(v * k, 1)
+            else:
+                scale_routes(v, k)
+    elif isinstance(obj, list):
+        for v in obj:
+            scale_routes(v, k)
+    return obj
+
+
+def plan_routes_coarse(layers: Layers, stops_list: list[dict], k: int, cfg=default_cfg):
+    """Plan on a grid coarsened by k (the 'pathfinding too slow' fallback), output in full-grid pixels."""
+    ccfg = config_copy(cfg, PIXEL_M=cfg.PIXEL_M * k, PATH_SIMPLIFY_PX=max(cfg.PATH_SIMPLIFY_PX / k, 0.5),
+                       NOGO_BUFFER_PX=max(1, round(cfg.NOGO_BUFFER_PX / k)), MARGIN_PX=cfg.MARGIN_PX / k)
+    coarse_stops = [{**s, "px": [int(s["px"][0]) // k, int(s["px"][1]) // k]} for s in stops_list]
+    routes, th_bytes, th, snapped, legs = plan_routes(coarsen_layers(layers, k), coarse_stops, ccfg)
+    scale_routes(routes, k)
+    routes["time_home"]["stride_px"] *= k
+    routes["params"]["pixel_m"] = cfg.PIXEL_M
+    routes["params"]["coarsened_by"] = k
+    routes["warnings"].append(f"planned on a {cfg.PIXEL_M * k:g} m grid (coarsened by {k})")
+    snapped = [{**s, "px": [c * k + k // 2 for c in s["px"]]} for s in snapped]
+    return routes, th_bytes, th, snapped, legs

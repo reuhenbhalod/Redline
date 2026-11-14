@@ -63,8 +63,12 @@ precomputes every route variant, and writes `routes.json` + `time_home.bin` for 
 
 ```bash
 pip install -r requirements.txt
+python pipeline/fake_export.py                    # FAKE data/ folder with every contract file (for the web app)
 python pipeline/04_routes.py --fake --preview     # fake hilly terrain -> work/fake/out/
+python pipeline/04_routes.py --fake --scenario sand_maze --preview   # also: easy, cliff
 python pipeline/04_routes.py                      # real layers in work/grid/ -> data/
+python pipeline/04_routes.py --coarsen 3          # if pathfinding is slow: plan on a 6 m grid
+python pipeline/tune_weights.py --fake            # compare cost-weight sets -> work/tune/weights.png
 python -m pytest tests
 ```
 
@@ -76,6 +80,7 @@ python -m pytest tests
 | `sand.npy` | float32 0..1, 1 = soft sand | optional |
 | `rough.npy` | float32 0..1, 1 = very rough | optional |
 | `nogo.npy` | bool | optional, extra no-go cells |
+| `dtm.npy` | float32 meters | optional: uphill/downhill leg times, and roughness if `rough.npy` is missing |
 
 Plus `data/stops.json` (contract shape) and optionally `data/env.json` for the suit budget.
 
@@ -83,5 +88,10 @@ Plus `data/stops.json` (contract shape) and optionally `data/env.json` for the s
 `max_slope_deg`, `fits_budget`, timelines `t_min`/`home_min` parallel to `path`, `stop_plan`, and
 `replan` options at each stop; the browser rule is spelled out in `routes.json → replan_rule`) and `time_home.bin` (little-endian uint16, tenths of a
 minute, 65535 = unreachable, downsampled by `time_home.stride_px`; see `routes.json → time_home`).
+
+Each variant also has mid-leg `checkpoints[]` (drop / head-home options from the crew's position)
+and, for `full`, a scripted `hazard_demo` (rover camera confirms a rock field ahead; detour path).
+Every export is checked against the contract (`engine.validate_routes`) before it is written, and
+snapped stop positions are written back into `stops.json` without touching Story's text.
 
 All weights, thresholds and walking-speed assumptions live in `pipeline/config.py`.

@@ -13,34 +13,43 @@ from scipy.ndimage import gaussian_filter, uniform_filter
 
 import config as cfg
 
+# Named scenarios for tests and demos. "default" is what data/ is built from.
+SCENARIOS = {
+    "default":   {"hills": 14, "cliff_m": 35, "gap": 0.85, "gap_sigma": 0.04, "sand_patches": 6},
+    "easy":      {"hills": 8, "cliff_m": 0, "gap": 0.0, "gap_sigma": 0.04, "sand_patches": 2},
+    "cliff":     {"hills": 10, "cliff_m": 60, "gap": 0.95, "gap_sigma": 0.02, "sand_patches": 3},
+    "sand_maze": {"hills": 8, "cliff_m": 0, "gap": 0.0, "gap_sigma": 0.04, "sand_patches": 25},
+}
 
-def make_dtm(size: int, seed: int) -> np.ndarray:
+
+def make_dtm(size: int, seed: int, scenario: str = "default") -> np.ndarray:
+    sc = SCENARIOS[scenario]
     rng = np.random.default_rng(seed)
     yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
     dtm = np.zeros((size, size), np.float32)
     f = size / 2000  # keep slopes realistic on smaller test grids
-    for _ in range(14):  # rolling hills
+    for _ in range(sc["hills"]):  # rolling hills
         cx, cy = rng.uniform(0, size, 2)
         sig = rng.uniform(0.03, 0.12) * size
         amp = rng.uniform(-30, 60) * f
         dtm += amp * np.exp(-((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * sig**2))
     # A delta-front scarp running roughly SW-NE, with a gentle ramp through it.
     d = (xx - yy * 0.6 - size * 0.35) / (0.02 * size)
-    gap = np.exp(-((yy - size * 0.55) ** 2) / (2 * (0.04 * size) ** 2))
-    dtm += 35 * f * np.tanh(d) * (1 - 0.85 * gap)
+    gap = np.exp(-((yy - size * 0.55) ** 2) / (2 * (sc["gap_sigma"] * size) ** 2))
+    dtm += sc["cliff_m"] * f * np.tanh(d) * (1 - sc["gap"] * gap)
     dtm += gaussian_filter(rng.normal(0, 3 * f, (size, size)), 3)  # small-scale texture
     return dtm
 
 
-def make_layers(size: int = cfg.GRID_SIZE_PX, seed: int = 7):
+def make_layers(size: int = cfg.GRID_SIZE_PX, seed: int = 7, scenario: str = "default"):
     rng = np.random.default_rng(seed + 1)
-    dtm = make_dtm(size, seed)
+    dtm = make_dtm(size, seed, scenario)
     gy, gx = np.gradient(dtm, cfg.PIXEL_M)
     slope = np.degrees(np.arctan(np.hypot(gx, gy))).astype(np.float32)
 
     sand = np.zeros((size, size), np.float32)
     yy, xx = np.mgrid[0:size, 0:size]
-    for _ in range(6):
+    for _ in range(SCENARIOS[scenario]["sand_patches"]):
         cx, cy = rng.uniform(0.15, 0.85, 2) * size
         a, b = rng.uniform(0.03, 0.09, 2) * size
         sand[((xx - cx) / a) ** 2 + ((yy - cy) / b) ** 2 < 1] = 1
@@ -69,10 +78,10 @@ def fake_stops(size: int):
     ]
 
 
-def write_fake(out_dir: str | Path, size: int = cfg.GRID_SIZE_PX, seed: int = 7) -> Path:
+def write_fake(out_dir: str | Path, size: int = cfg.GRID_SIZE_PX, seed: int = 7, scenario: str = "default") -> Path:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    dtm, slope, sand, rough, nogo = make_layers(size, seed)
+    dtm, slope, sand, rough, nogo = make_layers(size, seed, scenario)
     np.save(out / "dtm.npy", dtm)
     np.save(out / "slope_deg.npy", slope)
     np.save(out / "sand.npy", sand)
@@ -83,4 +92,6 @@ def write_fake(out_dir: str | Path, size: int = cfg.GRID_SIZE_PX, seed: int = 7)
 
 
 if __name__ == "__main__":
-    print("wrote", write_fake("work/fake"))
+    import sys
+    sc = sys.argv[1] if len(sys.argv) > 1 else "default"
+    print("wrote", write_fake(f"work/fake/{sc}" if sc != "default" else "work/fake", scenario=sc))

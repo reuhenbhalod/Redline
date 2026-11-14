@@ -25,12 +25,14 @@ def stops(h, a, b):
 
 
 def test_hard_slope_and_missing_data_are_infinite():
-    L = flat(10)
+    L = flat(40)
     L.slope_deg[2, 2] = cfg.SLOPE_HARD_DEG
     L.slope_deg[3, 3] = np.nan
     c = engine.cost_grid(L)
     assert np.isinf(c[2, 2]) and np.isinf(c[3, 3])
-    assert c[0, 0] == 1.0
+    assert np.isinf(c[2 + cfg.NOGO_BUFFER_PX, 2])  # safety buffer
+    assert c[10, 10] > c[39, 39]  # soft margin near no-go
+    assert c[39, 39] == pytest.approx(1.0, abs=1e-3)
 
 
 def test_flat_leg_is_straight_with_correct_distance_and_time():
@@ -156,3 +158,122 @@ def test_replan_minutes_line_up_with_plan_and_variants():
     assert skip["saves_min"] == pytest.approx(cfg.DEFAULT_WORK_MIN["science"], abs=0.1)
     abort = full["replan"][1]["options"][-1]
     assert abort["abort"] and abort["stops"] == ["A", "H"]
+
+
+# --- Engine hardening and stretch features ------------------------------------
+
+def test_path_keeps_buffer_from_nogo_and_drawn_path_never_cuts_it():
+    L = flat(80)
+    L.nogo[20:80, 38:42] = True
+    routes, *_ = engine.plan_routes(L, stops((10, 70), (70, 70), (40, 5)))
+    blocked = engine.walk_blocked_mask(engine.blocked_mask(L))
+    from skimage.draw import line
+    for v in routes["variants"]:
+        p = v["path"]
+        for (x0, y0), (x1, y1) in zip(p, p[1:]):
+            rr, cc = line(y0, x0, y1, x1)
+            assert not blocked[rr, cc].any()
+
+
+def test_sand_and_rough_slow_walking():
+    v_flat = engine.speed_m_per_min(0.0)
+    assert engine.speed_m_per_min(0.0, sand=1.0) == pytest.approx(v_flat * (1 - cfg.SAND_SLOWDOWN))
+    assert engine.speed_m_per_min(0.0, rough=1.0) == pytest.approx(v_flat * (1 - cfg.ROUGH_SLOWDOWN))
+
+
+def test_uphill_slower_than_downhill_with_dtm():
+    L = flat()
+    yy, xx = np.mgrid[0:60, 0:60]
+    L.dtm = (xx * 0.2 * cfg.PIXEL_M).astype(np.float32)  # 20% grade rising to the east
+    L.slope_deg[:] = np.degrees(np.arctan(0.2))
+    up = engine.leg_clock(np.array([[30, c] for c in range(5, 55)]), L)[-1]
+    down = engine.leg_clock(np.array([[30, c] for c in range(54, 4, -1)]), L)[-1]
+    assert up > down * 1.3  # Tobler: ~1.4x at a 20% grade
+    flat_v = engine.speed_m_per_min(0.0, grade=0.0)
+    assert flat_v == pytest.approx(cfg.V_FLAT_KMH * 1000 / 60)
+
+
+def test_why_is_capped_with_summary_and_full_detail_kept():
+    full = planned()["full"]
+    assert len(full["why"]) <= cfg.WHY_MAX_LINES
+    assert "km" in full["why"][0] and "min" in full["why"][0]
+    assert len(full["why_detail"]) >= 1
+
+
+def test_checkpoints_mid_leg():
+    L = flat(400)
+    routes, *_ = engine.plan_routes(L, stops((20, 380), (380, 380), (200, 20)))
+    full = next(v for v in routes["variants"] if v["id"] == "full")
+    cps = full["checkpoints"]
+    assert cps, "expected mid-leg checkpoints"
+    for c in cps:
+        j = c["path_index"]
+        assert full["path"][j] != full["path"][j + 1]  # never inside a work dwell
+        assert full["t_min"][j] <= c["t_min"] <= full["t_min"][j + 1]
+        kinds = [o["kind"] for o in c["options"]]
+        assert kinds[0] == "planned"
+        planned_min = c["options"][0]["minutes"]
+        assert planned_min == pytest.approx(full["est_min"] - c["t_min"], abs=0.2)
+        for o in c["options"][1:]:
+            assert o["path"][0] == c["px"]
+    # on the way to A (science) you can drop A; on the way home there is nothing to drop
+    first = cps[0]
+    assert first["next_stop"] == "A"
+    assert [o["kind"] for o in first["options"]] == ["planned", "drop", "abort"]
+    drop = first["options"][1]
+    assert drop["stops"] == ["@", "B", "H"] and drop["minutes"] < first["options"][0]["minutes"]
+
+
+def test_hazard_demo_detours_around_the_rock_field():
+    L = flat(120)
+    c = engine.config_copy(cfg, HAZARD_DEMO={"variant": "full", "leg": ["A", "B"], "at_frac": [0.4, 0.5, 0.6],
+                                             "radius_m": 12, "warn_m": 20})
+    routes, *_ = engine.plan_routes(L, stops((10, 100), (60, 60), (110, 10)), c)
+    full = next(v for v in routes["variants"] if v["id"] == "full")
+    hz = full["hazard_demo"]
+    hx, hy = hz["hazard_px"]
+    for x, y in hz["path"]:
+        assert (x - hx) ** 2 + (y - hy) ** 2 > hz["radius_px"] ** 2
+    assert hz["path"][0] == full["path"][hz["trigger_path_index"]]
+    assert hz["path"][-1] == routes["stops_px"]["B"]
+    assert hz["extra_m"] > 0 and hz["extra_min"] > 0
+
+
+def test_validate_routes_accepts_good_and_catches_bad():
+    L = flat()
+    routes, *_ = engine.plan_routes(L, stops((5, 30), (55, 30), (30, 5)))
+    assert engine.validate_routes(routes, (60, 60)) == []
+    routes["variants"][0]["t_min"] = routes["variants"][0]["t_min"][:-1]
+    del routes["variants"][1]["why"]
+    errs = engine.validate_routes(routes, (60, 60))
+    assert any("lengths differ" in e for e in errs) and any("missing why" in e for e in errs)
+
+
+def test_validate_layers_and_bounds():
+    L = flat()
+    L.slope_deg[0, 0] = 150  # percent, not degrees
+    with pytest.raises(ValueError, match="out of range"):
+        engine.validate_layers(L)
+    L = flat()
+    engine.check_bounds({"width_px": 60, "height_px": 60, "pixel_m": cfg.PIXEL_M}, L)
+    with pytest.raises(ValueError):
+        engine.check_bounds({"width_px": 2000, "height_px": 2000, "pixel_m": cfg.PIXEL_M}, L)
+
+
+def test_roughness_from_dtm_when_rough_missing(tmp_path):
+    rng = np.random.default_rng(0)
+    dtm = np.zeros((50, 50), np.float32)
+    dtm[:, 25:] = rng.normal(0, 2, (50, 25))
+    np.save(tmp_path / "slope_deg.npy", np.zeros((50, 50), np.float32))
+    np.save(tmp_path / "dtm.npy", dtm)
+    L = engine.load_layers(tmp_path)
+    assert L.rough[:, 35:].mean() > L.rough[:, :15].mean() + 0.3
+
+
+@pytest.mark.parametrize("scenario", fake_terrain.SCENARIOS)
+def test_fake_scenarios_route(tmp_path, scenario):
+    grid = fake_terrain.write_fake(tmp_path, size=300, scenario=scenario)
+    L = engine.load_layers(grid)
+    st = json.loads((grid / "stops.json").read_text())
+    routes, *_ = engine.plan_routes(L, st)
+    assert engine.validate_routes(routes, (300, 300)) == []

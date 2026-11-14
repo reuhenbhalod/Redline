@@ -34,12 +34,11 @@ def hillshade(dtm: np.ndarray, az=315, alt=40) -> np.ndarray:
 def main(out_dir="data", size=cfg.GRID_SIZE_PX):
     import matplotlib
     matplotlib.use("Agg")
-    from matplotlib import cm
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     dtm, slope, sand, rough, nogo = fake_terrain.make_layers(size)
-    layers = engine.Layers(slope, sand, rough, nogo)
+    layers = engine.Layers(slope, sand, rough, nogo, dtm=dtm)
 
     # basemap: Mars-tinted hillshade
     hs = hillshade(dtm)[..., None]
@@ -101,7 +100,6 @@ def main(out_dir="data", size=cfg.GRID_SIZE_PX):
         "why": "FAKE: Three Forks sample depot. Retrieve the cached tubes for return to Earth.",
         "expect": "FAKE: 10 sample tubes on flat ground, about 5 m apart.",
         "minerals": "", "rock_unit": "FAKE: crater floor (Cf)", "photos": [], "sol": 650})
-    (out / "stops.json").write_text(json.dumps(stops, indent=1, ensure_ascii=False))
 
     env = {"dust": "low", "solar_alert": False,
            "radiation_note": "FAKE: dose rate is a Curiosity RAD stand-in from Gale Crater",
@@ -112,15 +110,14 @@ def main(out_dir="data", size=cfg.GRID_SIZE_PX):
            "fake": True}
     (out / "env.json").write_text(json.dumps(env, indent=1))
 
-    routes, th_bytes, *_ = engine.plan_routes(layers, stops)
-    budget, reserve = cfg.SUIT_BUDGET_MIN, cfg.SUIT_RESERVE_MIN
-    for v in routes["variants"]:
-        v["fits_budget"] = bool(v["est_min"] + reserve <= budget)
-    routes["params"]["suit_budget_min"] = budget
-    routes["params"]["suit_reserve_min"] = reserve
+    routes, th_bytes, _, snapped, _ = engine.plan_routes(layers, stops)
+    engine.finalize(routes, cfg.SUIT_BUDGET_MIN, cfg.SUIT_RESERVE_MIN)
     routes["fake"] = True
-    (out / "routes.json").write_text(json.dumps(routes, indent=1, ensure_ascii=False))
-    (out / "time_home.bin").write_bytes(th_bytes)
+    engine.write_outputs(out, routes, th_bytes, (size, size))
+    px = {s["id"]: s["px"] for s in snapped}
+    for s in stops:
+        s["px"] = px[s["id"]]
+    (out / "stops.json").write_text(json.dumps(stops, indent=1, ensure_ascii=False))
     print("wrote fake contract files to", out.resolve())
 
 
