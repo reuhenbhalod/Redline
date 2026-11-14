@@ -58,12 +58,12 @@ These come from opening the real files. Each fix is mandatory, not optional.
 | --- | --- | --- |
 | 1 | All rasters use Equirectangular with standard parallel 0. At 18.45°N, east-west "meters" are only 0.949 m on the ground, so distances are 5.4% too long and east-west slopes too gentle. | Reproject everything to a local true-scale grid: `+proj=eqc +lat_ts=<box center lat> +lon_0=<box center lon> +R=3396190 +units=m` (error under 0.01% across 4 km). Slope, distances, routes and times are only computed on this grid. |
 | 2 | Waypoint `easting`/`northing` fields use a different, cos(lat)-scaled projection. | Never use them. Always convert from `lon`/`lat` with pyproj. |
-| 3 | CRISM map is an RGB image, and pixel colors drift up to ~100 units from the readme key. | Decode each pixel to the nearest key color (10 minerals × 2 confidence levels plus "none"), store class IDs, resample class IDs with **nearest neighbor only**. Mark it as 36 m data in layers.json. |
+| 3 | CRISM map is an RGB image. White (34% of the file) means **no coverage**, black means covered but unidentified, and 21,000 distinct colors exist because class edges were blended during resampling. | Decode to the nearest key color (10 minerals × 2 confidence levels); white → `255` no coverage; colors more than 40 RGB units from any key → `254` uncertain (7.9% of covered pixels). Fractions ignore both. Resample class IDs with **nearest neighbor only**. |
 | 4 | Depot position was a guess. | Tube positions = waypoint position at each tube's drop sol (from `sample_drop_timestamps.csv`). The depot is about 100 m across, centered near 77.408°E, 18.453°N. |
 | 5 | Carbonates are rare near the depot (1.4% of the 4 km box). | Stop A targets clays plus delta layering (see Overview). |
 | 6 | THEMIS TI in the box is 154–288 (median 221) with no low-inertia patches, so a threshold can't find sand. | Sand comes from Stack et al. "Aeolian bedforms, large/small" polygons. Large bedforms count as both soft ground and ridges. THEMIS is shown as context. |
 | 7 | Raw-image feed is noisy (sol 646: 479 images, 195 from an engineering camera, many thumbnails). | Keep only full frames from NAVCAM and MCZ (Mastcam-Z) cameras, pick the best few per stop, keep the credit line. Waypoint panoramas are blocked to scripts (HTTP 403), so they are not used. |
-| 8 | MEDA has no wind or dust products for the depot sols. Temperature is in the calibrated set, not derived. | Pressure and humidity from derived, temperatures from calibrated. Dust is a **scenario value with a cited published dust level**, labeled as such. |
+| 8 | MEDA has no wind or dust products for the depot sols, and TIRS `AIR_TEMP` reads up to +18 °C on some sols (an infrared retrieval, not the mast sensors). | Air temperature from ATS mast sensors 1–3 (median), ground from TIRS, 1st/99th percentiles. Dust **estimated** from the MEDA semidiurnal pressure tide: (S2/S0)[%] = 1.6τ + 0.3 (Wilson et al. 2008, applied at Jezero by Sánchez-Lavega et al. 2023, doi:10.1029/2022JE007480). Wind: not available. |
 | 9 | HiRISE DTM effective resolution is ~3 m, so 2 m slope is noisy. | Light Gaussian smoothing before slope. Slope computed at native resolution on the local grid, then aggregated to 2 m (keeps steep spots). Note it in the assumptions. |
 | 10 | Orthomosaic is not tiled: a 4 km crop downloads ~1.4 GB (DTM ~340 MB). Images are stitched, so brightness seams are possible. | Read only the window through `/vsicurl/` with rasterio, cache the crop in `raw/`, check the basemap by eye. |
 | 11 | Stack map has two fields per polygon (surface unit, bedrock unit), 2,082 polygons with an empty surface unit, and one empty geometry. | Label = surface unit if present, else bedrock unit. Skip empty geometries. |
@@ -76,7 +76,7 @@ These come from opening the real files. Each fix is mandatory, not optional.
 1. **Pick the box.** Tube positions from the depot bundle plus waypoints. Choose stop A from clay-bearing CRISM pixels inside Stack delta units, preferring spots Perseverance visited. Choose a flat habitat site. Center the 4 km box on all three and define the local CRS.
 2. **Crop.** Read the DTM and orthomosaic windows remotely with rasterio over `/vsicurl/` and cache them in `raw/`.
 3. **One grid.** Warp every raster to the local CRS at 2 m on the same box (bilinear for elevation and image, nearest for class maps). Rasterize the Stack polygons onto the same grid.
-4. **Rover points.** Convert waypoint and traverse lon/lat to grid pixels. Overlay them on the basemap and check that the traverse sits on the rover tracks.
+4. **Rover points.** Convert waypoint and traverse lon/lat to grid pixels. The HiRISE images predate the landing, so there are no rover tracks to check against; instead compare the rover-logged elevation (`elev_geoid`) with the DTM at each waypoint.
 5. **Derive layers.** Slope (degrees), roughness (detrended height variation over a 6–10 m window), sand and rocky masks from the Stack map, CRISM class IDs, and a no-go mask (slope over the hard limit, or missing data).
 6. **Export.** Colored transparent PNGs, numeric grids for Engine (`grids.npz`), JSON files, and provenance.
 
@@ -96,6 +96,22 @@ Each phase ends with a check. The next phase starts only when that check passes.
 | **D5. Environment** | MEDA (depot-season sols), RAD stand-in summary, DONKI Mars impacts, dust scenario with citation | `env_data.json`, each value with source and time frame | Story can fill `env.json` without looking up anything else |
 | **D6. Safety parameters** | Cited slope limits, walking speed versus slope, suit time budget, reserve, walk-back distance | `pipeline/safety_params.py`, assumptions list | Every number has a citation or an "assumption" label |
 | **D7. QA and handoff** | One-command rebuild, sanity checks (Perseverance's own drive path should rarely cross no-go cells), `provenance.json`, README data credits, NASA Data field text | `make data` (or `python -m pipeline.run`), `provenance.json`, README section | A clean rebuild from scratch passes all checks, and Engine and App load the files without changes |
+
+### Build results (Nov 14, `data` branch)
+
+All phases D0–D7 are built and committed. Results and what the build taught us:
+
+| # | Finding during the build | What we did |
+| --- | --- | --- |
+| 15 | Tubes are within 35 m of 77.4082°E, 18.4528°N. No waypoint exists on any drop sol or coring sol (the rover stays put). | Position = last waypoint before the sol, for both drops and coring sites. |
+| 16 | At 36 m, CRISM shows the whole delta front by the depot as one class (olivine + smectite), so it cannot rank outcrops. | Stop A ranked by Stack delta unit, a depot sample cored there, and HiRISE slope. Final: sol-460 waypoint, "Delta thinly layered", where **Bearwallow** was cored, 357 m from the depot, work-area slope p90 7.2°. |
+| 17 | Habitat: smooth crater floor, CTX mean slope 0.8° within 100 m, 1.2 km from the depot. The rover never parked within 150 m. | Habitat photos come from rover positions within 400 m, labeled as such in photos.json. |
+| 18 | The depot itself sits on mapped bedforms. | Sand is a walking cost, never a no-go. |
+| 19 | Mastcam-Z raw frames come as `EBY` (color) and `ECM` (grayscale) copies, plus sky, sun, calibration-target and noise subframes. | Keep color full frames, drop sky/deck/subframes, content-check every thumbnail. Featured images are the official PDS Mastcam-Z mosaics (delta front sols 466–474, depot sols 650/670/693). |
+| 20 | RAD files are ~67 MB per sol. | Read only the dose bytes with HTTP range requests using offsets from the label. Result: ~219 µGy/day, consistent with Hassler et al. 2014 (210 ± 40). |
+| 21 | Slope hard limit 20° (lunar traverse guideline, secondary source) puts 3.0% of the box in no-go. | Validated: 0.29% of Perseverance's own path cells are no-go; habitat, stop A and all 10 tubes are connected. |
+| 22 | Rover-logged elevation vs DTM at 248 waypoints: median residual 3 cm. | Confirms the lon/lat → grid chain (likely the same DTM underlies rover localization, so this checks our coordinates, not the DTM itself). |
+| 23 | The box contains the landing site (sol 13, Octavia E. Butler Landing). | Story point. |
 
 ## Route engine
 
@@ -195,7 +211,7 @@ The pipeline and the web app only talk through these files in `data/`, so both s
 | File | Holds | Written by |
 | --- | --- | --- |
 | basemap.png | HiRISE image, 2000 by 2000 | Data |
-| layers/slope.png, rough.png, sand.png, geology.png, minerals.png, ti.png | transparent color overlays, same size | Data |
+| layers/slope.png, rough.png, sand.png, rocky.png, geology.png, minerals.png, ti.png, nogo.png | transparent color overlays, same size | Data |
 | bounds.json | grid size, pixel size, local CRS, corner coordinates, convention | Data |
 | layers.json | legend, source, native resolution and time frame for each overlay | Data |
 | grids.npz | numeric 2000 by 2000 arrays for Engine: elevation_m, slope_deg, rough_m, sand (0/1/2 = none/small/large bedforms), rocky (0/1), geo_unit (ID), mineral (ID), nogo (0/1) | Data |
@@ -204,6 +220,9 @@ The pipeline and the web app only talk through these files in `data/`, so both s
 | photos.json | filtered raw-image candidates per stop: URL, sol, camera, credit | Data |
 | env_data.json | MEDA, RAD and DONKI values, each with source and time frame | Data |
 | provenance.json | every source: URL, version, license, credit line, what we did to it | Data |
+| site.json | habitat, stop A (with shortlist and criteria), depot center, where depot samples were cored | Data |
+| safety_params.json | every limit and speed/time parameter with source and basis (primary / secondary / assumption) | Data |
+| grids_readme.json | dtype, units and ID tables for each array in grids.npz | Data |
 | stops.json | habitat and science stops, photos, notes | Engine and Story |
 | routes.json | every route variant with path, distance, time | Engine |
 | env.json | dust, solar alert, radiation note, suit budget | Story (from env_data.json) |
