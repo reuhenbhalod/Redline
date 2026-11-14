@@ -106,3 +106,53 @@ def test_routes_json_matches_contract_on_fake_terrain(tmp_path):
         assert all(0 <= x < 400 and 0 <= y < 400 for x, y in v["path"])
     full, short = routes["variants"]
     assert short["est_min"] < full["est_min"]
+
+
+# --- Component 8: timelines and replan options -------------------------------
+
+def planned(L=None):
+    L = L or flat()
+    routes, *_ = engine.plan_routes(L, stops((5, 30), (55, 30), (30, 5)))
+    return {v["id"]: v for v in routes["variants"]}
+
+
+def test_timeline_is_parallel_monotonic_and_ends_at_est_min():
+    for v in planned().values():
+        assert len(v["path"]) == len(v["t_min"]) == len(v["home_min"])
+        assert v["t_min"][0] == 0
+        assert all(b >= a for a, b in zip(v["t_min"], v["t_min"][1:]))
+        assert v["t_min"][-1] == pytest.approx(v["est_min"], abs=0.1)
+        assert v["home_min"][0] == 0 and v["home_min"][-1] == 0
+
+
+def test_work_stop_is_a_repeated_point_with_dwell_time():
+    full = planned()["full"]
+    a = next(s for s in full["stop_plan"] if s["id"] == "A")
+    i = a["path_index"]
+    assert full["path"][i] == full["path"][i + 1] == [55, 30]
+    assert full["t_min"][i + 1] - full["t_min"][i] == pytest.approx(cfg.DEFAULT_WORK_MIN["science"], abs=0.01)
+    assert a["depart_min"] - a["arrive_min"] == pytest.approx(cfg.DEFAULT_WORK_MIN["science"], abs=0.01)
+
+
+def test_replan_options_at_each_stop():
+    v = planned()
+    full = v["full"]
+    at = {r["at"]: [o["kind"] for o in r["options"]] for r in full["replan"]}
+    assert at["H"] == ["planned", "drop"]
+    assert at["A"] == ["planned", "skip_work", "abort"]
+    assert at["B"] == ["planned"]  # depot work is never cut; going home is already the plan
+
+
+def test_replan_minutes_line_up_with_plan_and_variants():
+    v = planned()
+    full = v["full"]
+    for r in full["replan"]:
+        sp = full["stop_plan"][r["stop_index"]]
+        assert r["options"][0]["minutes"] == pytest.approx(sp["remaining_min"], abs=0.1)
+    drop_at_h = next(o for o in full["replan"][0]["options"] if o["kind"] == "drop")
+    assert drop_at_h["stops"] == v["skipA"]["stops"]
+    assert drop_at_h["minutes"] == pytest.approx(v["skipA"]["est_min"], abs=0.1)
+    skip = next(o for o in full["replan"][1]["options"] if o["kind"] == "skip_work")
+    assert skip["saves_min"] == pytest.approx(cfg.DEFAULT_WORK_MIN["science"], abs=0.1)
+    abort = full["replan"][1]["options"][-1]
+    assert abort["abort"] and abort["stops"] == ["A", "H"]

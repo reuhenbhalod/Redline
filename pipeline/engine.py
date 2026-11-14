@@ -277,55 +277,225 @@ def why_lines(leg: Leg, layers: Layers, stops: dict[str, dict], cfg=default_cfg)
     return out
 
 
-# --- Variants ----------------------------------------------------------------
 
-def to_xy(path_rc: np.ndarray, simplify_px: float) -> np.ndarray:
-    p = np.asarray(path_rc, dtype=float)
-    if simplify_px > 0 and len(p) > 2:
-        p = approximate_polygon(p, tolerance=simplify_px)
-    return p[:, ::-1].round().astype(int)  # [row, col] -> [x, y]
+# --- Route assembly and timelines --------------------------------------------
+
+def leg_clock(path_rc: np.ndarray, layers: Layers, cfg=default_cfg) -> np.ndarray:
+    """Cumulative walking minutes at each cell of a full-resolution path."""
+    p = np.asarray(path_rc)
+    if len(p) < 2:
+        return np.zeros(len(p))
+    step_m = np.hypot(*np.diff(p, axis=0).T) * cfg.PIXEL_M
+    s = np.nan_to_num(layers.slope_deg[p[:, 0], p[:, 1]], nan=0.0)
+    return np.r_[0.0, np.cumsum(step_m / speed_m_per_min((s[:-1] + s[1:]) / 2, cfg))]
 
 
-def build_variant(vdef: dict, legs: dict, layers: Layers, stops: dict[str, dict], cfg=default_cfg) -> dict:
-    seq = vdef["stops"]
-    path: list[list[int]] = []
-    leg_out, why = [], []
-    walk_total = dist_total = 0.0
-    for a, b in zip(seq, seq[1:]):
+def simplify_idx(path_rc: np.ndarray, tol: float) -> np.ndarray:
+    """Indices of the path cells kept by Douglas-Peucker simplification."""
+    p = np.asarray(path_rc)
+    if tol <= 0 or len(p) <= 2:
+        return np.arange(len(p))
+    simp = approximate_polygon(p.astype(float), tolerance=tol).round().astype(int)
+    idx, j = [], 0
+    for v in simp:
+        while j < len(p) and not (p[j] == v).all():
+            j += 1
+        if j == len(p):
+            raise RuntimeError("simplified vertex is not on the path")
+        idx.append(j)
+    return np.array(idx)
+
+
+def _home_at(th: np.ndarray, x: int, y: int):
+    v = th[y, x]
+    return round(float(v), 1) if np.isfinite(v) else None
+
+
+def assemble(seq: list[str], legs: dict, layers: Layers, stops: dict, th: np.ndarray,
+             cfg=default_cfg, work_first: float = 0.0) -> dict:
+    """Join legs into one timed route starting at clock 0 at seq[0].
+
+    The crew dwells `work_first` minutes at seq[0], then the stop's work time at each
+    intermediate stop. A dwell is written as the stop point repeated with a later time,
+    so linear interpolation of position over `t_min` keeps the crew still while working.
+    """
+    path, t_min, home_min, leg_out, stop_plan = [], [], [], [], []
+    clock = 0.0
+
+    def add(x, y, t):
+        path.append([int(x), int(y)])
+        t_min.append(round(float(t), 2))
+        home_min.append(_home_at(th, int(x), int(y)))
+
+    x0, y0 = stops[seq[0]]["px"]
+    add(x0, y0, 0.0)
+    sp = {"id": seq[0], "path_index": 0, "arrive_min": 0.0}
+    if work_first:
+        clock += work_first
+        add(x0, y0, clock)
+    sp["depart_min"] = round(clock, 2)
+    stop_plan.append(sp)
+
+    dist = walk = 0.0
+    for k, (a, b) in enumerate(zip(seq, seq[1:])):
         leg = legs[(a, b)]
-        xy = to_xy(leg.path_rc, cfg.PATH_SIMPLIFY_PX).tolist()
-        start_index = max(len(path) - 1, 0)
-        path.extend(xy if not path else xy[1:])  # don't repeat the shared stop point
+        cum = leg_clock(leg.path_rc, layers, cfg)
+        start = len(path) - 1
+        for i in simplify_idx(leg.path_rc, cfg.PATH_SIMPLIFY_PX)[1:]:
+            r, c = leg.path_rc[i]
+            add(c, r, clock + cum[i])
+        clock += float(cum[-1])
+        sp = {"id": b, "path_index": len(path) - 1, "arrive_min": round(clock, 2)}
+        dwell = 0.0 if k == len(seq) - 2 else work_min(stops[b], cfg)
+        if dwell:
+            clock += dwell
+            x, y = stops[b]["px"]
+            add(x, y, clock)
+        sp["depart_min"] = round(clock, 2)
+        stop_plan.append(sp)
         leg_out.append({
             "from": a, "to": b,
             "distance_m": round(leg.distance_m, 1),
             "walk_min": round(leg.walk_min, 1),
             "max_slope_deg": round(leg.max_slope_deg, 1),
-            "path_start": start_index,
-            "path_end": len(path) - 1,
+            "path_start": start,
+            "path_end": sp["path_index"],
         })
-        if (b, a) not in [(l["from"], l["to"]) for l in leg_out[:-1]]:  # same leg walked back
-            why.extend(why_lines(leg, layers, stops, cfg))
-        walk_total += leg.walk_min
-        dist_total += leg.distance_m
+        dist += leg.distance_m
+        walk += leg.walk_min
+
+    return {
+        "path": path, "t_min": t_min, "home_min": home_min,
+        "legs": leg_out, "stop_plan": stop_plan,
+        "distance_m": round(dist, 1), "walk_min": round(walk, 1), "total_min": round(clock, 1),
+    }
+
+
+def route_why(seq: list[str], legs: dict, layers: Layers, stops: dict, cfg=default_cfg) -> list[str]:
+    why, seen = [], set()
+    for a, b in zip(seq, seq[1:]):
+        if (b, a) in seen or (a, b) in seen:  # same leg walked back
+            continue
+        seen.add((a, b))
+        why.extend(why_lines(legs[(a, b)], layers, stops, cfg))
+    return why
+
+
+# --- Replan options -----------------------------------------------------------
+
+def replan_specs(seq: list[str], stops: dict, cfg=default_cfg) -> list[dict]:
+    """Options at each decision point (arrival at each stop except the final one).
+
+    Kinds, best first:
+      planned   - carry on as planned
+      skip_work - cut the work at this stop (science stops only), then carry on
+      drop      - skip one or more remaining science stops
+      abort     - walk straight home (drops everything left, depot included)
+    Depot stops and depot work are never dropped except by abort.
+    """
+    from itertools import combinations
+
+    out = []
+    for i, here in enumerate(seq[:-1]):
+        rest = seq[i + 1:]
+        home = rest[-1]
+        work_here = work_min(stops[here], cfg) if i > 0 else 0.0
+        opts = [{"kind": "planned", "seq": [here] + rest, "work_here": work_here}]
+        if work_here and stops[here].get("kind") == "science":
+            opts.append({"kind": "skip_work", "seq": [here] + rest, "work_here": 0.0})
+        optional = [s for s in rest[:-1] if stops[s].get("kind") == "science"]
+        for r in range(1, len(optional) + 1):
+            for drop in combinations(optional, r):
+                kept = [s for s in rest if s not in drop]
+                opts.append({"kind": "drop", "seq": [here] + kept, "work_here": work_here, "dropped": list(drop)})
+        if len(rest) > 1 and here != home:
+            opts.append({"kind": "abort", "seq": [here, home], "work_here": 0.0, "dropped": rest[:-1]})
+        out.append({"at": here, "index": i, "options": opts})
+    return out
+
+
+def build_option(spec: dict, here: str, planned_min: float, legs, layers, stops, th, cfg) -> dict:
+    r = assemble(spec["seq"], legs, layers, stops, th, cfg, work_first=spec["work_here"])
+    name = lambda s: stops[s].get("name", s)
+    saves = 0.0 if spec["kind"] == "planned" else round(planned_min - r["total_min"], 1)
+    kind = spec["kind"]
+    if kind == "planned":
+        head = "Continue as planned"
+    elif kind == "skip_work":
+        head = f"Cut the {work_min(stops[here], cfg):.0f}-min work at {name(here)}, saves {saves:.0f} min"
+    elif kind == "drop":
+        head = f"Drop {', '.join(name(s) for s in spec['dropped'])}, saves {saves:.0f} min"
+    else:
+        dropped = ", ".join(name(s) for s in spec["dropped"])
+        head = f"Abort: walk straight home from {name(here)}, drops {dropped}"
+    return {
+        "kind": kind,
+        "stops": spec["seq"],
+        "work_here_min": spec["work_here"],
+        "minutes": r["total_min"],
+        "saves_min": saves,
+        "distance_m": r["distance_m"],
+        "path": r["path"],
+        "t_min": r["t_min"],
+        "home_min": r["home_min"],
+        "abort": kind == "abort",
+        "why": [head] + ([] if kind == "planned" else route_why(spec["seq"], legs, layers, stops, cfg)),
+    }
+
+
+# --- Variants -----------------------------------------------------------------
+
+def build_variant(vdef: dict, specs: list[dict], legs: dict, layers: Layers, stops: dict,
+                  th: np.ndarray, cfg=default_cfg) -> dict:
+    seq = vdef["stops"]
+    r = assemble(seq, legs, layers, stops, th, cfg)
+    total = r["total_min"]
+    for sp in r["stop_plan"]:
+        x, y = stops[sp["id"]]["px"]
+        sp["home_min"] = _home_at(th, x, y)
+        sp["remaining_min"] = round(max(total - sp["arrive_min"], 0.0), 1)
+
+    replan = []
+    for d in specs:
+        sp = r["stop_plan"][d["index"]]
+        planned = sp["remaining_min"]
+        opts = [build_option(o, d["at"], planned, legs, layers, stops, th, cfg) for o in d["options"]]
+        # planned first, then longest to shortest, abort last
+        opts = [opts[0]] + sorted([o for o in opts[1:] if not o["abort"]], key=lambda o: -o["minutes"]) \
+            + [o for o in opts if o["abort"]]
+        replan.append({"at": d["at"], "stop_index": d["index"], "path_index": sp["path_index"], "options": opts})
 
     work_total = sum(work_min(stops[s], cfg) for s in seq[1:-1])
     return {
         "id": vdef["id"],
         "stops": seq,
-        "distance_m": round(dist_total, 1),
-        "est_min": round(walk_total + work_total, 1),
-        "walk_min": round(walk_total, 1),
+        "distance_m": r["distance_m"],
+        "est_min": total,
+        "walk_min": r["walk_min"],
         "work_min": round(work_total, 1),
-        "max_slope_deg": round(max(l["max_slope_deg"] for l in leg_out), 1),
-        "path": path,
-        "legs": leg_out,
-        "why": why,
+        "max_slope_deg": round(max(l["max_slope_deg"] for l in r["legs"]), 1),
+        "path": r["path"],
+        "t_min": r["t_min"],
+        "home_min": r["home_min"],
+        "legs": r["legs"],
+        "stop_plan": r["stop_plan"],
+        "replan": replan,
+        "why": route_why(seq, legs, layers, stops, cfg),
     }
 
 
+REPLAN_RULE = (
+    "Each variant's path, t_min and home_min are parallel arrays: t_min is planned minutes since "
+    "leaving the habitat, home_min is minutes to walk home from that point. Interpolate position "
+    "linearly over t_min (a repeated point is a work stop). When the crew arrives at a stop at actual "
+    "time T, look up replan[] for that stop and take the first option where "
+    "T + option.minutes + reserve <= budget (options are ordered planned first, abort last). If none "
+    "fits, take the abort option. An option's t_min is relative to arrival at that stop: add T."
+)
+
+
 def plan_routes(layers: Layers, stops_list: list[dict], cfg=default_cfg):
-    """Run the whole engine. Returns (routes_json_dict, time_home_bytes, warnings)."""
+    """Run the whole engine. Returns (routes, time_home_bytes, time_home_grid, stops_list, legs)."""
     blocked = blocked_mask(layers, cfg)
     stops_list = [dict(s) for s in stops_list]
     warnings = snap_stops(stops_list, blocked)
@@ -341,16 +511,19 @@ def plan_routes(layers: Layers, stops_list: list[dict], cfg=default_cfg):
     if not variants:
         raise ValueError("no route variant has all its stops in stops.json")
 
-    pairs = {(a, b) for v in variants for a, b in zip(v["stops"], v["stops"][1:])}
+    specs = {v["id"]: replan_specs(v["stops"], stops, cfg) for v in variants}
+    seqs = [v["stops"] for v in variants] + [o["seq"] for s in specs.values() for d in s for o in d["options"]]
+    pairs = {(a, b) for seq in seqs for a, b in zip(seq, seq[1:])}
+
     cost = cost_grid(layers, cfg)
     legs = solve_legs(cost, layers, stops, sorted(pairs), cfg)
-    out_variants = [build_variant(v, legs, layers, stops, cfg) for v in variants]
-
     th = time_home(layers, stops[cfg.HABITAT_ID]["px"], cfg)
     th_bytes, th_meta = encode_time_home(th, cfg.TIME_HOME_STRIDE)
+    out_variants = [build_variant(v, specs[v["id"]], legs, layers, stops, th, cfg) for v in variants]
 
     routes = {
         "variants": out_variants,
+        "replan_rule": REPLAN_RULE,
         "time_home_file": "time_home.bin",
         "time_home": th_meta,
         "stops_px": {s["id"]: s["px"] for s in stops_list},

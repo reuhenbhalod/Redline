@@ -79,8 +79,9 @@ python -m pytest tests
 
 Plus `data/stops.json` (contract shape) and optionally `data/env.json` for the suit budget.
 
-**Outputs** in `data/`: `routes.json` (contract shape, plus `legs`, `walk_min`, `work_min`,
-`max_slope_deg`, `fits_budget` per variant) and `time_home.bin` (little-endian uint16, tenths of a
+**Outputs** in `data/`: `routes.json` (contract shape, plus per variant: `legs`, `walk_min`, `work_min`,
+`max_slope_deg`, `fits_budget`, timelines `t_min`/`home_min` parallel to `path`, `stop_plan`, and
+`replan` options at each stop; the browser rule is spelled out in `routes.json → replan_rule`) and `time_home.bin` (little-endian uint16, tenths of a
 minute, 65535 = unreachable, downsampled by `time_home.stride_px`; see `routes.json → time_home`).
 
 All weights, thresholds and walking-speed assumptions live in `pipeline/config.py`.

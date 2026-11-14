@@ -83,7 +83,7 @@ def main(argv=None):
 
     budget, reserve = load_env_budget(Path(args.env))
     for v in routes["variants"]:
-        v["fits_budget"] = v["est_min"] + reserve <= budget
+        v["fits_budget"] = bool(v["est_min"] + reserve <= budget)
     routes["params"]["suit_budget_min"] = budget
     routes["params"]["suit_reserve_min"] = reserve
 

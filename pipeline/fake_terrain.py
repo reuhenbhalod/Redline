@@ -61,10 +61,10 @@ def fake_stops(size: int):
     def px(x, y):
         return [int(x * f), int(y * f)]
     return [
-        {"id": "H", "name": "Habitat", "px": px(450, 1500), "kind": "base"},
-        {"id": "A", "name": "Delta outcrop", "px": px(1000, 900), "kind": "science",
+        {"id": "H", "name": "Habitat", "px": px(620, 1330), "kind": "base"},
+        {"id": "A", "name": "Delta outcrop", "px": px(1000, 980), "kind": "science",
          "work_min": 45, "why": "FAKE: layered carbonates", "expect": "", "photos": [], "sol": 0},
-        {"id": "B", "name": "Three Forks depot", "px": px(1450, 650), "kind": "depot",
+        {"id": "B", "name": "Three Forks depot", "px": px(1350, 760), "kind": "depot",
          "work_min": 30, "why": "FAKE: sample tubes", "expect": "", "photos": [], "sol": 0},
     ]
 

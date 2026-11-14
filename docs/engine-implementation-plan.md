@@ -20,7 +20,7 @@ Status key: `[x]` done on the branch · `[ ]` to do · *(stretch)* = only if tim
 | 5 | Leg pathfinding | 3, 4 | done | Sat AM |
 | 6 | Route variants | 5 | done | Sat noon |
 | 7 | Time-home grid | 4 | done | Sat noon |
-| 8 | Replan support data for the app | 6, 7 | to do | Sat 2 pm |
+| 8 | Replan support data for the app | 6, 7 | done, needs App sign-off | Sat 2 pm |
 | 9 | Why-lines (explanations) | 5, 6 | first pass done | Sat 4 pm |
 | 10 | Export and contract checks | 6–9 | mostly done | Sat 4 pm |
 | 11 | Visual QA and tuning | 10 | preview done | Sat 4–6 pm |
@@ -40,7 +40,7 @@ Goal: realistic stand-in layers so the engine can be built and tested before rea
 - [x] 1.2 A delta-front cliff with one walkable gap, so routes have to find a pass
 - [x] 1.3 Soft sand patches, roughness from local elevation variance, and a missing-data block
 - [x] 1.4 Scale feature heights with grid size so small test grids keep realistic slopes
-- [x] 1.5 Fake `stops.json` (H, A, B) placed so `full` is over budget and `skipA` fits
+- [x] 1.5 Fake `stops.json` (H, A, B) placed so `full` fits on time and the replan fires when the crew is slow
 - [ ] 1.6 Fixed seeds plus 2–3 named scenarios (`easy`, `cliff`, `sand_maze`) for tests and demos
 - [ ] 1.7 Let the App teammate have the fake `routes.json` (copy it to `data/` behind a flag, or share it)
 
@@ -133,11 +133,18 @@ Done when: the app shows the same time-home number as Python for a test point.
 
 Goal: precompute everything `sim.js` needs, so the replan rule in the browser is just arithmetic.
 
-- [ ] 8.1 Cumulative time along each variant's path (minutes elapsed at each path point, work stops included)
-- [ ] 8.2 Time home at each path point (sampled from the time-home grid), for the air bar
-- [ ] 8.3 At each stop: planned arrival time, time home from that stop, and slack against the budget
-- [ ] 8.4 Replan table: at each stop, which variant to switch to if behind schedule, and the reason text
-- [ ] 8.5 Agree field names with the App teammate before Sat 2 pm
+Replan is a decision at each stop: the doc's "drop a stop" only works before reaching it, so at
+each stop the engine precomputes the options **planned → skip_work → drop → abort**.
+`skip_work` cuts the science work at that stop, `drop` skips remaining science stops, and `abort`
+walks straight home. The depot is never dropped, except by abort.
+
+- [x] 8.1 `t_min` parallel to `path`: planned minutes since leaving H; a work stop is the point repeated with a later time
+- [x] 8.2 `home_min` parallel to `path`: time home at each point, sampled from the time-home grid
+- [x] 8.3 `stop_plan`: arrival, departure, time home and remaining minutes at each stop
+- [x] 8.4 `replan[]` per stop: ordered options with their own path, timeline, minutes, savings and reason text
+- [x] 8.5 `replan_rule` text in `routes.json`; fake stops tuned so full fits on time, skip_work fires 20–40 min late, abort at 80
+- [ ] 8.6 **Walk the App teammate through the fields** and agree them before they build `sim.js`
+- [ ] 8.7 *(stretch)* Decisions mid-leg, not only at stops (needs options from points along the path)
 
 Done when: `sim.js` can drive the astronaut and fire the replan using only `routes.json`.
 
@@ -209,7 +216,7 @@ Goal: show the rover's "hazard seen ahead → reroute" without a live engine in 
 1. **Data → Engine format.** The engine needs number grids (`slope_deg.npy`, `sand.npy` 0–1,
    `nogo.npy`), not just the PNGs in the contract. Who turns THEMIS thermal inertia into a 0–1 sand
    value, and with what threshold? Does Data ship `rough.npy` or `dtm.npy`?
-2. **Replan fields (8.x).** Confirm names and shapes with App before they build `sim.js`.
+2. **Replan fields (8.x).** Built; confirm names and shapes with App before they build `sim.js`.
 3. **`stops.json` ownership.** Story writes the text; Engine writes the snapped `px`. Agree who
    commits the file last.
 4. **Suit budget.** Story owns `env.json`. The budget decides whether `full` fits, so set it together.
