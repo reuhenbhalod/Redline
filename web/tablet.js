@@ -6,7 +6,7 @@
 import { fmtMin, fmtDistM, distM, esc, effectiveBudget, DEMO_BUDGET_NOTE } from './util.js';
 import { createMiniMap } from './minimap.js';
 
-const MAP_SPAN_PX = 330;          // ~660 m across at 2 m/px
+const PX_PER_GRID = 2.3;          // screen px per grid px (2 m) at zoom 1: the map shows more ground on wider screens
 const TRIGGER_TITLE = {
   schedule: 'Behind schedule: new plan suggested',
   air: 'Air is running short: head home',
@@ -41,12 +41,17 @@ export function initTablet(ctx) {
         </div>
         <div class="tbl-card tbl-air">
           <div class="tbl-row"><span class="tbl-k">Air left</span><span class="tbl-num" data-f="airLeft">—</span></div>
-          <div class="tbl-bar" aria-hidden="true"><i data-f="barUsed"></i><i data-f="barReserve"></i></div>
+          <div class="tbl-bar" aria-hidden="true"><i data-f="barLeft"></i><i data-f="barReserve"></i></div>
           <div class="tbl-row tbl-row-sm">
             <span>Time home <b data-f="timeHome">—</b></span>
             <span data-f="margin"></span>
           </div>
           <span class="tbl-demo" data-f="demo" hidden></span>
+        </div>
+        <div class="tbl-card tbl-route">
+          <div class="tbl-row"><span class="tbl-k">Route</span><span class="tbl-k" data-f="routeEta"></span></div>
+          <ol class="tbl-steps" data-f="steps"></ol>
+          <div class="tbl-prog" aria-hidden="true"><i data-f="prog"></i></div>
         </div>
         <div class="tbl-card tbl-status">
           <span class="tbl-k">Now</span>
@@ -67,10 +72,10 @@ export function initTablet(ctx) {
       <button type="button" class="tbl-btn" data-act="landmark">I see a landmark</button>
     </div>
     <div class="tbl-actions" data-f="actions">
-      <button type="button" class="tbl-btn" data-act="hazard">Mark hazard</button>
-      <button type="button" class="tbl-btn" data-act="photo">Take photo</button>
-      <button type="button" class="tbl-btn" data-act="pause">Pause walk</button>
-      <button type="button" class="tbl-btn tbl-btn-home" data-act="home" aria-pressed="false">Way home</button>
+      <button type="button" class="tbl-btn" data-act="hazard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 22 20H2Z"/><path d="M12 10v4M12 17v.5"/></svg><span data-l>Mark hazard</span></button>
+      <button type="button" class="tbl-btn" data-act="photo"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="1.5"/><circle cx="12" cy="13.5" r="3.5"/><path d="M8.5 7 10 4.5h4L15.5 7"/></svg><span data-l>Take photo</span></button>
+      <button type="button" class="tbl-btn tbl-btn-play" data-act="pause"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5v14l11-7Z"/></svg><span data-l>Start walk</span></button>
+      <button type="button" class="tbl-btn tbl-btn-home" data-act="home" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11 12 4l9 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/></svg><span data-l>Way home</span></button>
     </div>
     <div class="tbl-takeover" data-f="replan" hidden></div>`;
 
@@ -95,11 +100,11 @@ export function initTablet(ctx) {
 
   // ---- buttons
   let wayHome = false;
-  let span = MAP_SPAN_PX;
+  let zoomF = 1;
   f.map.querySelector('.tbl-zoom').addEventListener('click', (e) => {
     const z = e.target.closest('[data-zoom]');
     if (!z) return;
-    span = Math.max(120, Math.min(900, span * (Number(z.dataset.zoom) > 0 ? 1.5 : 1 / 1.5)));
+    zoomF = Math.max(0.35, Math.min(3, zoomF * (Number(z.dataset.zoom) > 0 ? 1.5 : 1 / 1.5)));
     render(ctx.getState(), true);
   });
   root.addEventListener('click', (e) => {
@@ -164,6 +169,31 @@ export function initTablet(ctx) {
         <button type="button" class="tbl-accept" data-confirm="${esc(p.id)}">Accept new route</button>
         <span class="tbl-dim tbl-fine">Both crew see this. The walk is paused until someone accepts.</span>
       </div>`;
+  }
+
+  // ---- route progress (planned stops, visited / dropped / next, progress along the walk)
+  let routeKey = '';
+  function renderRoute(s, sim) {
+    const v = data.variantsById[s.plannedVariantId] || data.routes.variants[0];
+    const visited = sim.visited || [], dropped = sim.dropped || [];
+    const key = [v.id, visited.join(), dropped.join(), sim.nextStop?.id, sim.status].join('|');
+    if (key !== routeKey) {
+      routeKey = key;
+      const last = v.stop_plan.length - 1;
+      f.steps.innerHTML = v.stop_plan.map((sp, i) => {
+        const st = data.stopsById[sp.id];
+        const state = dropped.includes(sp.id) ? 'dropped'
+          : (i > 0 && i < last && visited.includes(sp.id)) || (i === 0 && sim.status !== 'idle') || (i === last && (sim.status === 'done' || sim.status === 'aborted')) ? 'done'
+          : (sim.nextStop?.id === sp.id && i > 0 && sim.status !== 'idle') ? 'next' : '';
+        return `<li data-state="${state}" class="${st?.kind === 'base' ? 'is-base' : ''}"><i>${esc(sp.id)}</i>
+          <span>${esc(i === 0 ? 'Start' : i === last ? 'Home' : st?.name || sp.id)}<b>T+${esc(fmtMin(sp.arrive_min))}</b></span></li>`;
+      }).join('');
+    }
+    const end = sim.schedule?.projectedReturnT || v.est_min;
+    const frac = sim.status === 'done' || sim.status === 'aborted' ? 1 : Math.max(0, Math.min(1, sim.t / end));
+    f.prog.style.width = `${(frac * 100).toFixed(1)}%`;
+    const eta = `Back T+${fmtMin(end)}`;
+    if (f.routeEta.textContent !== eta) f.routeEta.textContent = eta;
   }
 
   // ---- main render
@@ -238,9 +268,11 @@ export function initTablet(ctx) {
     // air
     const air = sim.air || {};
     set('airLeft', fmtMin(air.leftMin));
-    const used = Math.max(0, Math.min(1, (air.usedMin ?? 0) / (air.budgetMin || b.budgetMin)));
-    const res = Math.max(0, Math.min(1, (air.reserveMin ?? b.reserveMin) / (air.budgetMin || b.budgetMin)));
-    f.barUsed.style.width = `${(used * 100).toFixed(1)}%`;
+    const budgetMin = air.budgetMin || b.budgetMin;
+    const leftF = Math.max(0, Math.min(1, (air.leftMin ?? budgetMin) / budgetMin));
+    const res = Math.max(0, Math.min(1, (air.reserveMin ?? b.reserveMin) / budgetMin));
+    f.barLeft.style.width = `${(leftF * 100).toFixed(1)}%`;
+    f.barLeft.dataset.level = air.level || 'ok';
     f.barReserve.style.width = `${(res * 100).toFixed(1)}%`;
     set('timeHome', fmtMin(air.timeHomeMin));
     set('margin', `Margin ${fmtMin(air.marginMin)}`);
@@ -257,6 +289,7 @@ export function initTablet(ctx) {
     set('extra', extra);
 
     // map
+    const span = Math.max(160, Math.min(1400, (f.map.clientWidth || 600) / PX_PER_GRID)) * zoomF;
     mm.view(ev.px, span);
     mmTrail(sim.trail);
     mmRoute(sim.active?.path);
@@ -276,9 +309,16 @@ export function initTablet(ctx) {
 
     // buttons
     const pauseBtn = root.querySelector('[data-act="pause"]');
+    const pauseLbl = pauseBtn.querySelector('[data-l]');
     const pauseTxt = s.playing ? 'Pause walk' : (sim.status === 'idle' ? 'Start walk' : 'Resume walk');
-    if (pauseBtn.textContent !== pauseTxt) pauseBtn.textContent = pauseTxt;
-    pauseBtn.disabled = !!sim.pendingReplan;
+    if (pauseLbl.textContent !== pauseTxt) {   // only on change (Safari drops clicks on replaced text nodes)
+      pauseLbl.textContent = pauseTxt;
+      pauseBtn.querySelector('svg').innerHTML = s.playing ? '<rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/>' : '<path d="M7 5v14l11-7Z"/>';
+      pauseBtn.classList.toggle('is-primary', !s.playing);
+    }
+    if (pauseBtn.disabled !== !!sim.pendingReplan) pauseBtn.disabled = !!sim.pendingReplan;
+
+    renderRoute(s, sim);
 
     renderReplan(sim.pendingReplan);
   }

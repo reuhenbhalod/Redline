@@ -49,8 +49,10 @@
 #tablet .tbl-row-sm b { font: 600 20px var(--mono); margin-left: 6px; }
 #tablet .tbl-num { font: 600 38px/1 var(--mono); font-variant-numeric: tabular-nums; }
 #tablet .tbl-bar { height: 12px; background: var(--surface-3); display: flex; position: relative; overflow: hidden; }
-#tablet .tbl-bar i:first-child { display: block; height: 100%; background: color-mix(in srgb, var(--text-dim) 45%, transparent); }
-#tablet .tbl-bar i:last-child { position: absolute; right: 0; top: 0; bottom: 0; background: var(--warn); }
+#tablet .tbl-bar i:first-child { display: block; height: 100%; background: var(--signal); transition: width 0.3s; }
+#tablet .tbl-bar i:first-child[data-level="warn"] { background: var(--warn); }
+#tablet .tbl-bar i:first-child[data-level="danger"] { background: var(--danger); }
+#tablet .tbl-bar i:last-child { position: absolute; left: 0; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, var(--warn) 0 4px, color-mix(in srgb, var(--warn) 55%, transparent) 4px 8px); }
 #tablet [data-f="margin"] { font: 600 15px var(--mono); }
 #tablet [data-f="margin"][data-level="ok"] { color: var(--ok); }
 #tablet [data-f="margin"][data-level="warn"] { color: var(--warn); }
@@ -83,9 +85,13 @@
   border-top: 1px solid var(--border); background: var(--surface);
 }
 #tablet .tbl-btn {
-  min-height: 68px; border: 1px solid var(--border); background: var(--surface-3); color: var(--text);
-  font: 600 17px var(--font); cursor: pointer;
+  min-height: 68px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  font: 600 16px var(--font); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px;
 }
+#tablet .tbl-btn svg { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+#tablet .tbl-btn-play svg path, #tablet .tbl-btn-play svg rect { fill: currentColor; stroke: none; }
+#tablet .tbl-btn.is-primary { background: var(--signal); border-color: var(--signal); color: var(--signal-ink); }
+#tablet .tbl-btn.is-primary:hover { background: var(--mars-strong); }
 #tablet .tbl-btn:hover { border-color: var(--dust); }
 #tablet .tbl-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 #tablet .tbl-btn:focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
@@ -120,25 +126,25 @@
 
 /* minimap marks (shared classes from minimap.js, scoped here) */
 #tablet .mm-void { fill: #000; }
-#tablet .mm-base { filter: var(--map-tint); }
-#tablet .mm-grid-line { fill: none; stroke: rgba(244, 237, 228, 0.18); stroke-width: 1.2; }
-#tablet .mm-route { stroke: var(--route-planned); stroke-width: 3.2; stroke-linejoin: round; stroke-linecap: round; }
-#tablet .mm-trail { stroke: var(--crew-1); stroke-width: 1.6; stroke-dasharray: 1 4; opacity: 0.8; }
-#tablet .mm-home { stroke: var(--route-home); stroke-width: 3; stroke-dasharray: 5 4; }
-#tablet .mm-proposed { stroke: var(--route-proposed); stroke-width: 3.2; stroke-dasharray: 7 5; }
+#tablet .mm-base { }
+#tablet .mm-grid-line { fill: none; stroke: rgba(244, 237, 228, 0.12); stroke-width: 1; }
+#tablet .mm-route { stroke: var(--route-planned); stroke-width: 5; stroke-linejoin: round; stroke-linecap: round; filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.6)); }
+#tablet .mm-trail { stroke: var(--crew-1); stroke-width: 2; stroke-dasharray: 1 5; stroke-linecap: round; opacity: 0.9; }
+#tablet .mm-home { stroke: var(--route-home); stroke-width: 4; stroke-dasharray: 8 6; }
+#tablet .mm-proposed { stroke: var(--route-proposed); stroke-width: 5; stroke-dasharray: 10 7; }
 #tablet .mm-hazard { fill: rgba(255, 90, 79, 0.25); stroke: var(--danger); stroke-width: 1.5; stroke-dasharray: 3 3; }
-#tablet .mm-ring { fill: rgba(94, 234, 212, 0.12); stroke: var(--crew-1); stroke-width: 0.8; }
+#tablet .mm-ring { fill: rgba(94, 234, 212, 0.12); stroke: var(--crew-1); stroke-width: 1.5; }
 #tablet[data-link="lost"] .mm-ring { fill: rgba(255, 90, 79, 0.10); stroke: var(--danger); stroke-dasharray: 2 2; }
-#tablet .mm-ev1 { fill: var(--crew-1); stroke: var(--bg); stroke-width: 1.4; }
-#tablet .mm-ev2 { fill: var(--crew-2); stroke: var(--bg); stroke-width: 1.2; }
-#tablet .mm-rover { fill: var(--rover); stroke: var(--bg); stroke-width: 1.2; }
+#tablet .mm-ev1 { fill: var(--crew-1); stroke: var(--bg); stroke-width: 2.5; }
+#tablet .mm-ev2 { fill: var(--crew-2); stroke: var(--bg); stroke-width: 2; }
+#tablet .mm-rover { fill: var(--rover); stroke: var(--bg); stroke-width: 2; }
 #tablet[data-rover-link="lost"] .mm-rover { fill: #6b5d50; stroke-dasharray: 2 2; }
-#tablet .mm-stop rect { fill: var(--signal); stroke: var(--bg); stroke-width: 1.5; }
+#tablet .mm-stop rect { fill: var(--signal); stroke: var(--bg); stroke-width: 2.5; }
 #tablet .mm-stop text { fill: var(--signal-ink); font-family: var(--mono); font-weight: 700; }
-#tablet .mm-stop-base rect { fill: var(--bg); stroke: var(--stop-base); }
+#tablet .mm-stop-base rect { fill: var(--bg); stroke: var(--stop-base); stroke-width: 2.5; }
 #tablet .mm-stop-base text { fill: var(--text); }
 #tablet .mm-stop.is-dropped rect { fill: #4a4036; }
-#tablet .mm-mark { fill: none; stroke: var(--warn); stroke-width: 2; }
+#tablet .mm-mark { fill: rgba(255, 181, 71, 0.2); stroke: var(--warn); stroke-width: 2.5; }
 
 @media (max-width: 900px) {
   #tablet .tbl-body { grid-template-columns: 1fr; grid-template-rows: auto 300px; }
@@ -152,3 +158,44 @@
 #tablet .tbl-actions-lost { grid-template-columns: 2fr 1fr 1fr; }
 #tablet .tbl-btn-go { background: var(--signal); border-color: var(--signal); color: var(--signal-ink); font-weight: 700; }
 #tablet .tbl-actions[hidden] { display: none !important; }
+
+/* route progress card */
+#tablet .tbl-route { gap: 12px; }
+#tablet .tbl-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+#tablet .tbl-steps li { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
+#tablet .tbl-steps i {
+  width: 26px; height: 26px; display: grid; place-items: center; position: relative; z-index: 0;
+  font: 700 12px var(--mono); font-style: normal; color: var(--signal-ink);
+}
+#tablet .tbl-steps i::before { content: ""; position: absolute; inset: 4px; transform: rotate(45deg); background: var(--signal); z-index: -1; }
+#tablet .tbl-steps li.is-base i { color: var(--text); }
+#tablet .tbl-steps li.is-base i::before { background: var(--bg); border: 2px solid var(--text); }
+#tablet .tbl-steps span { font-size: 13px; color: var(--text-dim); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+#tablet .tbl-steps b { display: block; font: 600 13px var(--mono); color: var(--text); }
+#tablet .tbl-steps li[data-state="done"] i::before { background: var(--ok); border-color: var(--ok); }
+#tablet .tbl-steps li[data-state="done"] i { color: #06210f; }
+#tablet .tbl-steps li[data-state="next"] i::before { box-shadow: 0 0 0 4px rgba(94, 234, 212, 0.3); }
+#tablet .tbl-steps li[data-state="next"] span { color: var(--text); }
+#tablet .tbl-steps li[data-state="dropped"] { opacity: 0.45; text-decoration: line-through; }
+#tablet .tbl-prog { height: 4px; background: var(--surface-3); }
+#tablet .tbl-prog i { display: block; height: 100%; background: var(--signal); transition: width 0.3s; }
+#tablet .tbl-status { margin-top: auto; }
+
+/* no arrow while working at a stop or after the walk ends */
+#tablet .tbl-next[data-kind="work"] .tbl-arrow, #tablet .tbl-next[data-kind="done"] .tbl-arrow { display: none; }
+/* shorter screens (laptops): tighten the left column so every card fits without scrolling */
+@media (max-height: 780px) {
+  #tablet .tbl-strip { height: 44px; }
+  #tablet .tbl-left { padding: 14px; gap: 10px; }
+  #tablet .tbl-next { min-height: 0; padding: 14px 18px; gap: 16px; }
+  #tablet .tbl-arrow { width: 56px; height: 56px; }
+  #tablet .tbl-big { font-size: 38px; }
+  #tablet .tbl-card { padding: 12px 16px; gap: 8px; }
+  #tablet .tbl-num { font-size: 32px; }
+  #tablet .tbl-steps i { width: 22px; height: 22px; font-size: 11px; }
+  #tablet .tbl-steps li { gap: 4px; }
+  #tablet .tbl-status { font-size: 14px; gap: 4px; }
+  #tablet .tbl-status-main { font-size: 15px; }
+  #tablet .tbl-actions { padding: 10px 14px; gap: 10px; }
+  #tablet .tbl-btn { min-height: 60px; }
+}
