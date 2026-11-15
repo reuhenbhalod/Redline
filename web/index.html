@@ -4,23 +4,25 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Redline · Mars EVA Planner</title>
-  <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <!-- .ico first for Safari and older browsers, PNG and SVG for the rest; ?v= forces a re-fetch when the icon changes -->
+  <link rel="icon" href="favicon.ico?v=2" sizes="48x48">
+  <link rel="icon" href="favicon-32.png?v=2" sizes="32x32" type="image/png">
+  <link rel="icon" href="favicon.svg?v=2" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=2">
   <meta name="theme-color" content="#12100e">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=20261114215650">
-  <link rel="stylesheet" href="map.css?v=20261114215650">
-  <link rel="stylesheet" href="panels.css?v=20261114215650">
-  <link rel="stylesheet" href="tablet.css?v=20261114215650">
-  <link rel="stylesheet" href="planner.css?v=20261114215650">
+  <link rel="stylesheet" href="style.css?v=20261114221614">
+  <link rel="stylesheet" href="map.css?v=20261114221614">
+  <link rel="stylesheet" href="panels.css?v=20261114221614">
+  <link rel="stylesheet" href="tablet.css?v=20261114221614">
+  <link rel="stylesheet" href="planner.css?v=20261114221614">
   <!-- Leaflet is a classic script: it defines window.L before app.js (a module) runs. -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="importmap" data-stamp>{"imports":{"./app.js":"./app.js?v=20261114215650","./demo.js":"./demo.js?v=20261114215650","./map.js":"./map.js?v=20261114215650","./minimap.js":"./minimap.js?v=20261114215650","./panels.js":"./panels.js?v=20261114215650","./planner.js":"./planner.js?v=20261114215650","./sim.js":"./sim.js?v=20261114215650","./tablet.js":"./tablet.js?v=20261114215650","./util.js":"./util.js?v=20261114215650"}}</script>
-  <script type="module" src="app.js?v=20261114215650"></script>
+  <script type="importmap" data-stamp>{"imports":{"./app.js":"./app.js?v=20261114221614","./demo.js":"./demo.js?v=20261114221614","./map.js":"./map.js?v=20261114221614","./minimap.js":"./minimap.js?v=20261114221614","./panels.js":"./panels.js?v=20261114221614","./planner.js":"./planner.js?v=20261114221614","./sim.js":"./sim.js?v=20261114221614","./tablet.js":"./tablet.js?v=20261114221614","./util.js":"./util.js?v=20261114221614"}}</script>
+  <script type="module" src="app.js?v=20261114221614"></script>
 </head>
 <body data-mode="planner">
   <header id="topbar">
