@@ -2,6 +2,13 @@
 
 Marswalk Planner for NASA Space Apps 2026 ("Interplanetary Survival Guide: Martian Map"). Full design: [docs/architecture.md](docs/architecture.md).
 
+**Live app: https://reuhenbhalod.github.io/Redline/** (no login). Views: Planner, Astronaut tablet, Helmet HUD, Rover; presenter controls under **DEMO ▸**.
+Demo shortcuts: [tablet mid-walk](https://reuhenbhalod.github.io/Redline/web/?mode=tablet&t=24) ·
+[reroute card](https://reuhenbhalod.github.io/Redline/web/?mode=tablet&budget=demo&slow=1&t=40) ·
+[rover link lost](https://reuhenbhalod.github.io/Redline/web/?mode=tablet&fault=link&t=30) ·
+[rover sees a hazard](https://reuhenbhalod.github.io/Redline/web/?mode=rover&fault=hazard&t=97) ·
+[helmet HUD](https://reuhenbhalod.github.io/Redline/web/?mode=hud&t=24)
+
 ## Data pipeline
 
 Everything the Engine and the App read is in `data/`, built by `pipeline/` from NASA and USGS sources.
