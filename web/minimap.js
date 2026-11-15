@@ -14,11 +14,16 @@ function el(tag, attrs = {}, parent) {
 export function createMiniMap(container, { url, widthPx, heightPx, pixelM = 2, label = 'Map' }) {
   const svg = el('svg', { class: 'mm-svg', role: 'img', 'aria-label': label, preserveAspectRatio: 'xMidYMid slice' });
   el('rect', { x: -5000, y: -5000, width: 12000, height: 12000, class: 'mm-void' }, svg);
-  el('image', { href: url, x: 0, y: 0, width: widthPx, height: heightPx, class: 'mm-base', preserveAspectRatio: 'none' }, svg);
-  const sp = 100 / pixelM;   // 100 m grid
   const defs = el('defs', {}, svg);
+  // Rust tint as an SVG filter: Safari ignores CSS `filter` on SVG <image>, so the map stayed grey there.
+  // The HiRISE image is greyscale (r = g = b), so each row maps grey to a warm tone, like the planner's tint.
+  const tintId = `mmt-${Math.random().toString(36).slice(2, 8)}`;
+  const flt = el('filter', { id: tintId, 'color-interpolation-filters': 'sRGB' }, defs);
+  el('feColorMatrix', { type: 'matrix', values: '0.30 0.30 0.30 0 -0.02  0.23 0.23 0.23 0 -0.02  0.165 0.165 0.165 0 -0.02  0 0 0 1 0' }, flt);
+  el('image', { href: url, x: 0, y: 0, width: widthPx, height: heightPx, class: 'mm-base', preserveAspectRatio: 'none', filter: `url(#${tintId})` }, svg);
+  const sp = 100 / pixelM;   // 100 m grid
   const pat = el('pattern', { id: `mmg-${Math.random().toString(36).slice(2, 8)}`, width: sp, height: sp, patternUnits: 'userSpaceOnUse' }, defs);
-  el('path', { d: `M${sp} 0H0V${sp}`, class: 'mm-grid-line' }, pat);
+  el('path', { d: `M${sp} 0H0V${sp}`, class: 'mm-grid-line', 'vector-effect': 'non-scaling-stroke' }, pat);
   el('rect', { x: 0, y: 0, width: widthPx, height: heightPx, fill: `url(#${pat.id})` }, svg);
   const layer = el('g', {}, svg);
   container.appendChild(svg);
@@ -35,7 +40,8 @@ export function createMiniMap(container, { url, widthPx, heightPx, pixelM = 2, l
     svg,
     /** A polyline; returns set(points|null). */
     line(cls) {
-      const node = el('polyline', { class: cls, fill: 'none' }, layer);
+      // stroke widths in CSS are screen pixels at any zoom
+      const node = el('polyline', { class: cls, fill: 'none', 'vector-effect': 'non-scaling-stroke' }, layer);
       let last;
       return (points) => {
         if (points === last) return;
@@ -46,7 +52,7 @@ export function createMiniMap(container, { url, widthPx, heightPx, pixelM = 2, l
     },
     /** A circle; returns set(px|null, radiusPx). */
     circle(cls) {
-      const node = el('circle', { class: cls, r: 1 }, layer);
+      const node = el('circle', { class: cls, r: 1, 'vector-effect': 'non-scaling-stroke' }, layer);
       return (px, r) => {
         if (!px) { node.style.display = 'none'; return; }
         node.style.display = '';
@@ -57,7 +63,7 @@ export function createMiniMap(container, { url, widthPx, heightPx, pixelM = 2, l
     /** A diamond marker with a letter; size in screen-independent px of the grid. */
     diamond(cls, letter, size) {
       const g = el('g', { class: cls }, layer);
-      el('rect', { x: -size / 2, y: -size / 2, width: size, height: size, transform: 'rotate(45)' }, g);
+      el('rect', { x: -size / 2, y: -size / 2, width: size, height: size, transform: 'rotate(45)', 'vector-effect': 'non-scaling-stroke' }, g);
       const t = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': size * 0.85 }, g);
       t.textContent = letter;
       return (px) => {
@@ -68,7 +74,7 @@ export function createMiniMap(container, { url, widthPx, heightPx, pixelM = 2, l
     },
     /** A square marker (the rover). */
     square(cls, size) {
-      const node = el('rect', { class: cls, width: size, height: size, x: -size / 2, y: -size / 2 }, layer);
+      const node = el('rect', { class: cls, width: size, height: size, x: -size / 2, y: -size / 2, 'vector-effect': 'non-scaling-stroke' }, layer);
       return (px) => {
         if (!px) { node.style.display = 'none'; return; }
         node.style.display = '';
