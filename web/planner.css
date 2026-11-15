@@ -20,15 +20,34 @@
 #layer-rail .rl-btn[aria-pressed="true"] { color: var(--text); background: rgba(94, 234, 212, 0.14); border-left-color: var(--signal); }
 #layer-rail .rl-btn:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
 
-/* ---------- GO TO search ---------- */
-#goto {
-  position: absolute; z-index: 500; left: 124px; top: 20px; width: 360px; height: 44px;
-  display: flex; align-items: center; gap: 12px; padding: 0 14px;
-  background: var(--glass); border: 1px solid var(--border);
+/* ---------- GO TO menu ---------- */
+#goto { position: absolute; z-index: 700; left: 124px; top: 20px; width: 360px; }
+#goto .gt-btn {
+  width: 100%; height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 14px; cursor: pointer; text-align: left;
+  background: var(--glass); border: 1px solid var(--border); color: var(--text);
 }
-#goto .gt-k { font: 600 11px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--signal); }
-#goto input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font: 14px var(--font); }
-#goto:focus-within { border-color: var(--signal); }
+#goto .gt-btn:hover, #goto .gt-btn[aria-expanded="true"] { border-color: var(--signal); }
+#goto .gt-k { font: 600 11px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--signal); flex: none; }
+#goto .gt-cur { flex: 1; min-width: 0; font: 14px var(--font); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#goto .gt-caret { color: var(--text-dim); font-size: 12px; }
+#goto .gt-menu {
+  margin-top: 6px; padding: 10px; display: flex; flex-direction: column; gap: 4px;
+  background: rgba(18, 16, 14, 0.97); border: 1px solid var(--border); box-shadow: var(--shadow);
+}
+#goto .gt-menu[hidden] { display: none !important; }
+#goto .gt-h { font: 500 10px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); padding: 6px 6px 4px; }
+#goto .gt-item {
+  display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 0 10px; cursor: pointer; text-align: left;
+  background: transparent; border: 1px solid transparent; color: var(--text); font: 14px var(--font);
+}
+#goto .gt-item:hover, #goto .gt-item:focus-visible { background: rgba(94, 234, 212, 0.1); border-color: var(--signal); outline: none; }
+#goto .gt-dia { width: 22px; height: 22px; flex: none; display: grid; place-items: center; font: 700 11px var(--mono); font-style: normal; color: var(--signal-ink); position: relative; }
+#goto .gt-dia::before { content: ""; position: absolute; inset: 3px; transform: rotate(45deg); background: var(--signal); z-index: -1; }
+#goto .gt-dia { z-index: 0; }
+#goto .gt-base { color: var(--text); }
+#goto .gt-base::before { background: var(--bg); border: 2px solid var(--text); }
+#goto .gt-tubes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; }
+#goto .gt-tube { min-height: 34px; font-size: 13px; }
 
 /* ---------- legend (active layers) ---------- */
 #layer-legend {
@@ -157,7 +176,7 @@
 #route-sheet .ds-skip:disabled { opacity: 0.45; cursor: not-allowed; }
 
 @media (max-width: 1100px) {
-  #goto { width: 260px; }
+  #goto { width: 280px; }
   #layer-legend { width: 240px; }
 }
 @media (max-width: 760px) {
