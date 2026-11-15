@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="hud.css">
   <link rel="stylesheet" href="tablet.css">
   <link rel="stylesheet" href="rover.css">
+  <link rel="stylesheet" href="planner.css">
   <!-- Leaflet is a classic script: it defines window.L before app.js (a module) runs. -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="app.js"></script>
@@ -41,51 +42,72 @@
     </div>
   </header>
 
-  <section id="demo-drawer" aria-label="Demo controls" hidden>
-    <div class="dd-col">
-      <h2 class="dd-h">Sim clock</h2>
-      <div class="dd-row">
-        <label class="tb-field" title="Sim speed (x real time)">
-          <span class="dd-lab">Speed</span>
-          <select id="sel-speed">
-            <option value="60">60×</option>
-            <option value="120">120×</option>
-            <option value="300" selected>300×</option>
-            <option value="600">600×</option>
-            <option value="1200">1200×</option>
-          </select>
-        </label>
-        <button type="button" id="btn-reset" class="btn" title="Reset sim (r)">Reset</button>
+  <section id="demo-drawer" aria-label="Demo console" hidden>
+    <div class="dd-console" role="dialog" aria-label="Demo console">
+      <div class="dd-top">
+        <h2 class="dd-title">Demo console</h2>
+        <span class="dd-sub">For presenters · hidden from crew screens · key D</span>
       </div>
-      <label class="dd-scrub"><span class="dd-lab">Jump to time</span>
-        <input type="range" id="scrub" min="0" max="480" step="0.5" value="0" aria-label="Sim time scrubber">
-      </label>
-      <label class="tb-field dd-budget" title="Suit budget used by the sim">
-        <span class="dd-lab">Suit budget</span>
-        <select id="sel-budget" aria-label="Suit budget (Demo budget is a DEMO SETTING, not the real suit budget)">
-          <option value="">Real budget</option>
-        </select>
-      </label>
-      <p class="dd-note">Demo 240 min is a DEMO SETTING, not the real suit budget. Change it before Play.</p>
-    </div>
-    <div class="dd-col dd-scen">
-      <h2 class="dd-h">Scenarios</h2>
-      <button type="button" class="toggle scen" id="tgl-hazard" data-toggle="faults.hazard" aria-pressed="false">
-        <span class="scen-name">Rock field</span><span class="scen-desc">Rover camera confirms rocks on A → B; detour proposed</span></button>
-      <button type="button" class="toggle toggle-fault scen" id="tgl-air" data-toggle="faults.highAir" aria-pressed="false">
-        <span class="scen-name">High air use</span><span class="scen-desc">Air burns 1.6× faster; turn-around alert (needs Demo 240)</span></button>
-      <button type="button" class="toggle toggle-fault scen" id="tgl-link" data-toggle="faults.linkLost" aria-pressed="false">
-        <span class="scen-name">Cut rover link</span><span class="scen-desc">Suit-only mode: dead reckoning, way home</span></button>
-      <button type="button" class="toggle toggle-fault scen" id="tgl-storm" data-toggle="faults.storm" aria-pressed="false">
-        <span class="scen-name">Storm</span><span class="scen-desc">Dust / solar storm: walk aborted, shortest way home</span></button>
-      <button type="button" class="toggle scen" id="tgl-slow" data-toggle="slowPace" aria-pressed="false">
-        <span class="scen-name">Slow pace</span><span class="scen-desc">Crew walks at 0.8×; replan at the next checkpoint</span></button>
+      <div class="dd-col">
+        <h3 class="dd-h">01 · Switch view</h3>
+        <div class="dd-views">
+          <button type="button" class="dd-view" data-mode-btn="planner" data-close><b>Habitat planner</b><span>Plan the route in the habitat</span></button>
+          <button type="button" class="dd-view" data-mode-btn="planner" data-stop="A" data-close><b>Stop preview</b><span>Photos and tasks at a stop</span></button>
+          <button type="button" class="dd-view" data-mode-btn="tablet" data-close><b>Astronaut tablet</b><span>What the crew carries</span></button>
+          <button type="button" class="dd-view" data-mode-btn="hud" data-close><b>Helmet HUD</b><span>Eyes-up visor overlay</span></button>
+          <button type="button" class="dd-view" data-mode-btn="rover" data-close><b>Rover view</b><span>Cameras, hazards, crew tracking</span></button>
+          <div class="dd-crew"><span class="dd-lab">Crew shown on tablet</span>
+            <div class="dd-seg"><button type="button" data-crew="0" aria-pressed="true">EV1</button><button type="button" data-crew="1" aria-pressed="false">EV2</button></div>
+          </div>
+        </div>
+
+        <h3 class="dd-h">02 · Sim clock</h3>
+        <div class="dd-clock">
+          <button type="button" class="dd-play" data-play aria-label="Play or pause">Play</button>
+          <div class="dd-seg dd-speeds">
+            <button type="button" data-speed="60">60×</button><button type="button" data-speed="300">300×</button><button type="button" data-speed="1200">1200×</button>
+          </div>
+          <select id="sel-speed" aria-label="Sim speed" class="dd-hidden-select">
+            <option value="60">60×</option><option value="120">120×</option><option value="300" selected>300×</option><option value="600">600×</option><option value="1200">1200×</option>
+          </select>
+          <span class="dd-time" data-time>T+0:00</span>
+        </div>
+        <div class="dd-scrubwrap">
+          <input type="range" id="scrub" min="0" max="480" step="0.5" value="0" aria-label="Sim time scrubber">
+          <div class="dd-marks" data-marks></div>
+        </div>
+        <label class="dd-budget"><span class="dd-lab">Suit budget</span>
+          <select id="sel-budget" aria-label="Suit budget (Demo budget is a DEMO SETTING, not the real suit budget)"><option value="">Real budget</option></select>
+        </label>
+        <p class="dd-note">Demo 240 min is a DEMO SETTING, not the real suit budget. Change it before Play.</p>
+      </div>
+
+      <div class="dd-col">
+        <h3 class="dd-h">03 · Trigger a scenario</h3>
+        <button type="button" class="toggle scen" id="tgl-hazard" data-toggle="faults.hazard" data-goto="rover" aria-pressed="false">
+          <span class="scen-txt"><b>Rover spots a rock field</b><span>Camera confirms rocks on A → B; detour sent to tablets</span></span><span class="scen-run">RUN →</span></button>
+        <button type="button" class="toggle toggle-fault scen" id="tgl-air" data-toggle="faults.highAir" data-goto="tablet" aria-pressed="false">
+          <span class="scen-txt"><b>High air use</b><span>Air burns 1.6× faster → turn-around (needs Demo 240)</span></span><span class="scen-run">RUN →</span></button>
+        <button type="button" class="toggle toggle-fault scen" id="tgl-link" data-toggle="faults.linkLost" data-goto="tablet" aria-pressed="false">
+          <span class="scen-txt"><b>Cut rover link</b><span>Suit-only mode: saved route, air, way home</span></span><span class="scen-run">RUN →</span></button>
+        <button type="button" class="toggle toggle-fault scen" id="tgl-storm" data-toggle="faults.storm" data-goto="tablet" aria-pressed="false">
+          <span class="scen-txt"><b>Solar storm warning</b><span>Storm → status red, walk aborted, shortest way home</span></span><span class="scen-run">RUN →</span></button>
+        <button type="button" class="toggle scen" id="tgl-slow" data-toggle="slowPace" data-goto="tablet" aria-pressed="false">
+          <span class="scen-txt"><b>Slow pace</b><span>Crew walks at 0.8× → replan at the next checkpoint</span></span><span class="scen-run">RUN →</span></button>
+        <button type="button" id="btn-reset" class="dd-reset" title="Reset sim (r)">Reset simulation</button>
+      </div>
     </div>
   </section>
 
   <main id="planner" aria-label="Habitat planner">
     <div id="map" aria-label="Map"></div>
-    <aside id="side-panel" aria-label="Side panel"></aside>
+    <aside id="layer-rail" aria-label="Map layers"></aside>
+    <label id="goto"></label>
+    <div id="layer-legend" aria-label="Legend of the layers that are on" hidden></div>
+    <aside id="sheet-wrap" aria-label="Route sheet">
+      <div id="route-sheet"></div>
+      <div id="side-panel" aria-label="Mission details"></div>
+    </aside>
   </main>
 
   <section id="hud" aria-label="Helmet HUD" hidden></section>

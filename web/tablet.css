@@ -145,3 +145,10 @@
   #tablet .tbl-map { border-left: 0; border-top: 1px solid var(--border); }
   #tablet .tbl-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* zoom + link-lost action set (mockups: Tablet navigating / link lost) */
+#tablet .tbl-zoom { position: absolute; z-index: 2; right: 14px; bottom: 14px; display: flex; flex-direction: column; gap: 8px; }
+#tablet .tbl-zoom button { width: 56px; height: 56px; border: 1px solid var(--border); background: var(--glass); color: var(--text); font: 400 26px var(--font); cursor: pointer; }
+#tablet .tbl-actions-lost { grid-template-columns: 2fr 1fr 1fr; }
+#tablet .tbl-btn-go { background: var(--signal); border-color: var(--signal); color: var(--signal-ink); font-weight: 700; }
+#tablet .tbl-actions[hidden] { display: none !important; }

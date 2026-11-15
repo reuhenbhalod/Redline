@@ -21,7 +21,7 @@ export function initTablet(ctx) {
   root.classList.add('tb-root');
   root.innerHTML = `
     <div class="tbl-strip">
-      <span class="tbl-who">EV1</span>
+      <span class="tbl-who" data-f="who">EV1</span>
       <span class="tbl-link"><i class="tbl-dot"></i><span data-f="link">Rover link</span></span>
       <span data-f="buddy" class="tbl-dim"></span>
       <span data-f="env" class="tbl-dim"></span>
@@ -56,11 +56,17 @@ export function initTablet(ctx) {
         </div>
       </section>
       <section class="tbl-map" aria-label="Live map" data-f="map">
-        <div class="tbl-legend"><span><i class="lg lg-ev1"></i>You (EV1)</span><span><i class="lg lg-ev2"></i>Buddy (EV2)</span><span><i class="lg lg-rover"></i>Rover</span></div>
+        <div class="tbl-legend"><span><i class="lg lg-ev1"></i>You</span><span><i class="lg lg-ev2"></i>Buddy</span><span><i class="lg lg-rover"></i>Rover</span></div>
         <div class="tbl-map-note" data-f="mapNote" hidden>Way home</div>
+        <div class="tbl-zoom"><button type="button" data-zoom="-1" aria-label="Zoom in">+</button><button type="button" data-zoom="1" aria-label="Zoom out">−</button></div>
       </section>
     </div>
-    <div class="tbl-actions">
+    <div class="tbl-actions tbl-actions-lost" data-f="lostActions" hidden>
+      <button type="button" class="tbl-btn tbl-btn-go" data-act="walkhome">Start walking home</button>
+      <button type="button" class="tbl-btn" data-act="wait">Wait for link</button>
+      <button type="button" class="tbl-btn" data-act="landmark">I see a landmark</button>
+    </div>
+    <div class="tbl-actions" data-f="actions">
       <button type="button" class="tbl-btn" data-act="hazard">Mark hazard</button>
       <button type="button" class="tbl-btn" data-act="photo">Take photo</button>
       <button type="button" class="tbl-btn" data-act="pause">Pause walk</button>
@@ -89,14 +95,29 @@ export function initTablet(ctx) {
 
   // ---- buttons
   let wayHome = false;
-  root.querySelector('.tbl-actions').addEventListener('click', (e) => {
+  let span = MAP_SPAN_PX;
+  f.map.querySelector('.tbl-zoom').addEventListener('click', (e) => {
+    const z = e.target.closest('[data-zoom]');
+    if (!z) return;
+    span = Math.max(120, Math.min(900, span * (Number(z.dataset.zoom) > 0 ? 1.5 : 1 / 1.5)));
+    render(ctx.getState(), true);
+  });
+  root.addEventListener('click', (e) => {
+    if (!e.target.closest('.tbl-actions')) return;
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const s = ctx.getState();
     const sim = s.sim;
     const at = sim ? `T+${fmtMin(sim.t)}` : '';
-    if (b.dataset.act === 'hazard') {
-      if (sim) mmMarks.push(sim.crew[0].px);
+    const me = sim?.crew?.[s.tabletCrew ?? 0] || sim?.crew?.[0];
+    if (b.dataset.act === 'walkhome' || b.dataset.act === 'wait') {
+      if (!sim?.pendingReplan) ctx.setState({ playing: b.dataset.act === 'walkhome' });
+      ctx.toast({ level: 'info', title: b.dataset.act === 'walkhome' ? 'Walking home on the saved route' : 'Holding position',
+        text: b.dataset.act === 'walkhome' ? 'Suit keeps your route, air and time home without the rover.' : 'Waiting for the rover link; air and time home keep counting.' });
+    } else if (b.dataset.act === 'landmark') {
+      ctx.toast({ level: 'ok', title: 'Landmark confirmed', text: `Position fix requested at ${at} (demo). Turn the link back on in DEMO to snap the dot back.` });
+    } else if (b.dataset.act === 'hazard') {
+      if (me) mmMarks.push(me.px);
       ctx.toast({ level: 'warn', title: 'Hazard marked', text: `Pinned at your position ${at}. Sent to the rover and your buddy (demo).` });
       drawMarks();
     } else if (b.dataset.act === 'photo') {
@@ -156,12 +177,17 @@ export function initTablet(ctx) {
     }
     const linkOk = sim.link?.ok !== false;
     const storm = !!sim.env?.stormActive;
-    const ev = sim.crew[0];
+    const ci = Math.min(sim.crew.length - 1, Math.max(0, s.tabletCrew ?? 0));
+    const ev = sim.crew[ci];
+    const buddy = sim.crew[1 - ci] || sim.crew[0];
 
     // strip
     root.dataset.link = linkOk ? 'ok' : 'lost';
     set('link', linkOk ? 'Rover link' : 'Rover link lost');
-    set('buddy', `Buddy EV2 · ${fmtDistM(distM(sim.crew[0].px, sim.crew[1].px, config.pixelM))}`);
+    set('who', ev.label || ev.id);
+    set('buddy', `Buddy ${buddy.label || buddy.id} · ${fmtDistM(distM(ev.px, buddy.px, config.pixelM))}`);
+    f.actions.hidden = !linkOk;
+    f.lostActions.hidden = linkOk;
     set('env', sim.env?.text || '');
     set('plan', sim.active?.label || '');
 
@@ -231,7 +257,7 @@ export function initTablet(ctx) {
     set('extra', extra);
 
     // map
-    mm.view(ev.px, MAP_SPAN_PX);
+    mm.view(ev.px, span);
     mmTrail(sim.trail);
     mmRoute(sim.active?.path);
     mmProposed(sim.pendingReplan?.path || null);
@@ -240,7 +266,7 @@ export function initTablet(ctx) {
     mmHazard(sim.hazard?.px || null, sim.hazard?.radiusPx || 0);
     ring1(ev.px, ev.uncertaintyM / config.pixelM);
     ev1(ev.px, 4.2);
-    ev2(sim.crew[1].px, 3.6);
+    ev2(buddy.px, 3.6);
     rover(sim.rover?.px || null);
     root.dataset.roverLink = sim.rover?.linkOk ? 'ok' : 'lost';
     stopSetters.forEach(([st]) => {
@@ -260,7 +286,7 @@ export function initTablet(ctx) {
   render(ctx.getState(), true);
   ctx.subscribe((s, prev, changed) => {
     if (changed.has('mode') && s.mode === 'tablet') { render(s, true); return; }
-    if (s.mode === 'tablet' && (changed.has('sim') || changed.has('playing') || changed.has('demoBudgetMin'))) render(s);
+    if (s.mode === 'tablet' && (changed.has('sim') || changed.has('playing') || changed.has('demoBudgetMin') || changed.has('tabletCrew'))) render(s);
   });
   return { render };
 }

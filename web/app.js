@@ -8,6 +8,8 @@ import { initPanels } from './panels.js';
 import { initHud } from './hud.js';
 import { initTablet } from './tablet.js';
 import { initRover } from './rover.js';
+import { initPlanner } from './planner.js';
+import { initDemo } from './demo.js';
 
 // ---------------------------------------------------------------------------
 // Tunable demo constants (shown in the UI as assumptions where relevant).
@@ -703,7 +705,7 @@ async function boot() {
   state = {
     mode: MODES.includes(params.get('mode')) ? params.get('mode') : 'planner',
     plannedVariantId: data.variantsById[params.get('variant')] ? params.get('variant') : data.routes.variants[0].id,
-    selectedStopId: null,
+    selectedStopId: data.stopsById[params.get('stop')] ? params.get('stop') : null,   // ?stop=A opens the stop preview
     layersOn,
     playing: false,
     speed: DEFAULT_SPEED,
@@ -715,6 +717,7 @@ async function boot() {
     })(),
     demoBudgetMin,          // null = real suit budget; a number = DEMO override (see effectiveBudget in util.js)
     roverPathOn: false,     // map.js: Perseverance's real traverse overlay
+    tabletCrew: 0,          // tablet.js: which crew member's tablet is shown (0 = EV1, 1 = EV2); demo console writes it
     depotOn: true,          // map.js: the 10 depot tubes
     sim: null, // written only by sim.js (see INTERFACES.md "state.sim")
   };
@@ -754,7 +757,7 @@ async function boot() {
 
   // sim first so state.sim exists before the views render; each init is isolated.
   const inits = [['sim', initSim], ['map', initMap], ['panels', initPanels], ['hud', initHud],
-    ['tablet', initTablet], ['rover', initRover]];
+    ['tablet', initTablet], ['rover', initRover], ['planner', initPlanner], ['demo', initDemo]];
   for (const [name, init] of inits) {
     try {
       ctx.modules[name] = (await init(ctx)) ?? null;
