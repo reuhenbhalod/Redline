@@ -1,6 +1,6 @@
 export const meta = {
   name: 'ui-improve',
-  description: 'Audit the Marswalk web app from several angles, pick the best improvements, build them in parallel by file, then verify and review',
+  description: 'Audit the Redline web app from several angles, pick the best improvements, build them in parallel by file, then verify and review',
   whenToUse: 'Improve the web app UI. Pass args.request to focus on something specific (e.g. "make the HUD readable on a phone"); with no request it does a general polish pass.',
   phases: [
     { title: 'Audit', detail: 'layout, demo story and data clarity, accessibility' },
@@ -20,7 +20,7 @@ const MAX = A.max || 8
 const REQUEST = A.request || ''
 
 const CONTEXT = `
-You are improving the Marswalk Planner web app in ${ROOT}/web/.
+You are improving the Redline web app (a Marswalk planner) in ${ROOT}/web/.
 Your role and rules are in ${ROOT}/.claude/agents/ui-engineer.md: read it first and follow it (web/ only, no build step,
 Leaflet 1.9.4 only, no git commits, no edits outside web/). Then read ${ROOT}/web/INTERFACES.md and ${ROOT}/web/README.md.
 The app is a NASA Space Apps demo: a habitat planner (map + side panel) and a helmet HUD that guide two astronauts on a
