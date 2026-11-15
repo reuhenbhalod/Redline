@@ -52,6 +52,11 @@ export function initRover(ctx) {
         <span data-f="rrText" class="rv-dim"></span>
         <span class="rv-warn">Sent to both tablets · waiting for crew OK</span>
       </div>
+      <div class="rv-card rv-stats">
+        <div><span class="rv-dim">Speed</span><b data-f="speed">—</b></div>
+        <div><span class="rv-dim">Tubes loaded</span><b data-f="tubes">—</b></div>
+        <div><span class="rv-dim">Link</span><b data-f="linkShort">—</b></div>
+      </div>
     </aside>`;
 
   const f = Object.fromEntries([...root.querySelectorAll('[data-f]')].map((n) => [n.dataset.f, n]));
@@ -154,6 +159,16 @@ export function initRover(ctx) {
       set('rrLabel', p.label);
       set('rrText', p.safety?.text || '');
     }
+
+    // stats: speed from the plan's flat speed x pace while walking; tubes loaded from the depot work progress
+    const walking = sim.status === 'walking' || sim.status === 'returning';
+    set('speed', walking ? `${(config.vFlatKmh * (sim.paceFactor || 1)).toFixed(1)} km/h` : '0.0 km/h');
+    const nT = data.depot?.tubes?.length || 0;
+    const workB = data.stopsById.B?.work_min || 1;
+    const loaded = sim.working?.stopId === 'B' ? Math.round(nT * (1 - sim.working.leftMin / workB))
+      : (sim.visited || []).includes('B') ? nT : 0;
+    set('tubes', `${Math.max(0, Math.min(nT, loaded))} / ${nT}`);
+    set('linkShort', linkOk ? 'Up' : 'Down');
 
     // map
     mm.view(rv?.px || c1.px, MAP_SPAN_PX);

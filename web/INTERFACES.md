@@ -6,7 +6,7 @@ If you need a field that is missing, compute it locally inside your module.
 
 Serve the repo root (`python3 -m http.server 8000` from the repo) and open `/web/index.html`.
 Data comes from `../data/` by default. Override it with `?data=<path relative to /web/>`. More URL params:
-`?mode=planner|tablet|hud|rover` picks the view, `?variant=skipA` picks the planned variant, and `?budget=demo` starts with the
+`?mode=planner|tablet|hud|rover` picks the view, `?stop=A` opens a stop preview, `?variant=skipA` picks the planned variant, and `?budget=demo` starts with the
 DEMO budget (`?budget=<minutes>` sets any demo value). Demo deep links: `?t=<min>` seeks after load, `?fault=link,air,storm,hazard`
 turns faults on from the start, `?slow=1` turns on slow pace, `?demo=1` opens the DEMO drawer.
 
@@ -26,6 +26,8 @@ There is no `env.json` any more: the environment comes from `env_data.json`, the
 | `tablet.js`, `tablet.css` | tablet view | Astronaut tablet inside `#tablet` (mode `tablet`). Read-only; emits `replan:confirm`, `toast`. |
 | `rover.js`, `rover.css` | rover view | Rover view inside `#rover` (mode `rover`). Read-only. |
 | `minimap.js` | shared | SVG mini map on the basemap that follows a point (used by tablet and rover). |
+| `planner.js`, `planner.css` | planner chrome | Layer rail, GO TO search, legend, route sheet and stop dossier (mockups). Writes `layersOn`, `roverPathOn`, `depotOn`, `selectedStopId`, `plannedVariantId` (idle only), `playing`; emits `map:focus`. The map's own layer control is hidden. `panels.js` still renders into `#side-panel`, which sits inside `#sheet-wrap`: its banners and replan card show above the sheet, its route/stop cards are replaced by the sheet, and safety/env/alerts/credits open under "Mission details". |
+| `demo.js` | demo console | Extra wiring for `#demo-drawer` (play, speed buttons, crew switch `state.tabletCrew`, stop-preview shortcut, scrubber stop markers, jump to the scenario's view). |
 
 **Redesign (Nov 14, `docs/ui-redesign.md`).** Four views: `planner`, `tablet`, `hud`, `rover` (top-bar tabs, keys 1–4,
 `h` toggles HUD, Esc returns to the planner). The sim controls and fault toggles moved into the **DEMO** drawer
@@ -218,13 +220,13 @@ Top-level keys are shallow-merged by `setState`.
 | `mode` | `'planner' \| 'tablet' \| 'hud' \| 'rover'` | app.js (top bar, `h` key, Esc), any module via `ctx.setMode` | all. `app.js` toggles `body[data-mode]` and `#hud[hidden]`. map.js calls `invalidateSize()` when the mode returns to planner. hud.js renders only while in HUD mode. |
 | `plannedVariantId` | `string` (`'full'`, `'skipA'`) | panels.js (variant picker), map.js (click on a variant polyline) | sim, map, panels, hud. **The sim applies it only while `sim.status === 'idle'`** (it rebuilds `sim.active` from it). Otherwise it ignores it until the next reset. The panels should disable the picker unless the sim is idle. |
 | `selectedStopId` | `string \| null` | map.js (marker click), panels.js (stop list, close button) | panels (stop preview), map (highlight marker) |
-| `layersOn` | `{ [layerId]: boolean }` (keys from layers.json, all false at start) | map.js only | map, panels (optional) |
+| `layersOn` | `{ [layerId]: boolean }` (keys from layers.json, all false at start) | planner.js (layer rail); map.js | map, panels (optional) |
 | `playing` | `boolean` | app.js (Play button, space key, Reset sets false). sim.js sets false on a pending replan, at done and at abort-done, and sets true after a confirm. | sim, top bar |
 | `speed` | `number`, x real time (60, 120, **300**, 600, 1200) | app.js | sim. Sim minutes per real second = `speed / 60`. |
 | `slowPace` | `boolean` | app.js | sim (and panels/hud for a "SLOW PACE" note) |
 | `faults` | `{ linkLost: boolean, highAir: boolean, storm: boolean, hazard: boolean }` | app.js | sim (it reacts), others display them |
 | `demoBudgetMin` | `number \| null` (null = real budget; `?budget=demo` starts at `config.demoBudgetMin`) | app.js (top-bar select `#sel-budget`, enabled only while `sim.status === 'idle'`). panels.js may add a mirror control in the Safety card that writes the same key, also only while idle. | everyone, always through `effectiveBudget(state, config)`. sim uses it for `air.budgetMin`, the replan rule and the turn-around check. Top bar shows a `DEMO BUDGET 240 MIN` badge while it is set (just `DEMO` at 1440 px and below; the dashed select still reads "Demo 240 min"). |
-| `roverPathOn` | `boolean` (false at start) | map.js only (its layer control) | map; others optional |
+| `roverPathOn` | `boolean` (false at start) | planner.js (layer rail); map.js | map; others optional |
 | `depotOn` | `boolean` (true at start) | map.js only (its layer control). Below zoom 1 the tubes show as one "10 tubes" badge (click zooms to the depot). | map; others optional |
 | `sim` | `SimState \| null` | **sim.js only** | everyone |
 

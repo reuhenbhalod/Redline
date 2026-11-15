@@ -175,29 +175,60 @@ select {
 .seg-btn { border: 0; border-radius: 0; background: transparent; }
 .seg-btn[aria-pressed="true"] { background: var(--signal); color: var(--signal-ink); font-weight: 600; }
 
-/* ---------------- Demo drawer ---------------- */
+/* ---------------- Demo console (mockup "Demo menu") ---------------- */
 #demo-drawer {
-  position: fixed; top: calc(var(--topbar-h) + 8px); right: 12px; z-index: 1100;
-  width: min(760px, calc(100vw - 24px)); max-height: calc(100vh - var(--topbar-h) - 24px); overflow: auto;
-  display: grid; grid-template-columns: 1fr 1.25fr; gap: 0;
+  position: fixed; inset: var(--topbar-h) 0 0 0; z-index: 1100; display: grid; place-items: start center; overflow: auto;
+  padding: 36px 20px; background: rgba(10, 8, 7, 0.72); backdrop-filter: blur(2px);
+}
+.dd-console {
+  width: min(1120px, 100%); display: grid; grid-template-columns: 1fr 1fr;
   background: rgba(18, 16, 14, 0.98); border: 1px solid var(--border); box-shadow: var(--shadow);
 }
-.dd-col { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.dd-top { grid-column: 1 / 3; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 20px 28px; border-bottom: 1px solid var(--border); }
+.dd-title { margin: 0; font: 600 24px var(--font); }
+.dd-sub { font: 500 11px var(--mono); letter-spacing: var(--label-ls); text-transform: uppercase; color: var(--text-dim); }
+.dd-col { padding: 22px 28px; display: flex; flex-direction: column; gap: 12px; }
 .dd-col + .dd-col { border-left: 1px solid var(--border); }
-.dd-h { margin: 0; font: 600 10.5px/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--signal); }
-.dd-row { display: flex; gap: 10px; align-items: flex-end; }
+.dd-h { margin: 6px 0 0; font: 600 10.5px/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--signal); }
+.dd-col > .dd-h:first-child { margin-top: 0; }
 .dd-lab { display: block; font: 500 10px/1 var(--mono); letter-spacing: var(--label-ls); text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
-.dd-scrub input { width: 100%; accent-color: var(--signal); }
+.dd-views { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.dd-view {
+  display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 14px; cursor: pointer;
+  background: transparent; border: 1px solid var(--border); color: var(--text);
+}
+.dd-view b { font: 600 15px var(--font); }
+.dd-view span { font-size: 12px; color: var(--text-dim); }
+.dd-view:hover { border-color: var(--dust); }
+.dd-view.is-on { border-color: var(--signal); background: rgba(94, 234, 212, 0.08); }
+.dd-crew { border: 1px dashed var(--border); padding: 12px 14px; }
+.dd-seg { display: flex; border: 1px solid var(--border); }
+.dd-seg button { flex: 1; min-height: 34px; border: 0; background: transparent; color: var(--text-dim); font: 600 12px var(--mono); cursor: pointer; }
+.dd-seg button[aria-pressed="true"] { background: var(--signal); color: var(--signal-ink); }
+.dd-clock { display: flex; align-items: center; gap: 12px; }
+.dd-play { min-width: 76px; min-height: 46px; border: 0; background: var(--signal); color: var(--signal-ink); cursor: pointer; font: 700 12px var(--font); letter-spacing: 0.14em; text-transform: uppercase; }
+.dd-play:disabled { opacity: 0.45; cursor: not-allowed; }
+.dd-speeds button { min-width: 58px; min-height: 44px; }
+.dd-hidden-select { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.dd-time { margin-left: auto; font: 600 18px var(--mono); }
+.dd-scrubwrap { position: relative; padding-bottom: 26px; }
+.dd-scrubwrap input { width: 100%; accent-color: var(--signal); }
+.dd-marks { position: absolute; left: 8px; right: 8px; bottom: 0; height: 22px; }
+.dd-mark { position: absolute; transform: translateX(-50%); font: 500 9.5px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); white-space: nowrap; padding-top: 10px; }
+.dd-mark i { position: absolute; left: 50%; top: 0; width: 7px; height: 7px; transform: translateX(-50%) rotate(45deg); background: var(--text); }
 .dd-budget select { width: 100%; }
 .dd-note { margin: 0; font-size: 11.5px; color: var(--text-faint); line-height: 1.4; }
-.scen {
-  display: grid; grid-template-columns: 1fr; gap: 2px; text-align: left; padding: 11px 14px; width: 100%;
-}
-.scen-name { font: 600 14px/1.2 var(--font); }
-.scen-desc { font-size: 12px; color: var(--text-dim); }
-.scen[aria-pressed="true"] .scen-name::after { content: "  ON"; font: 600 10px var(--mono); letter-spacing: 0.12em; color: var(--warn); }
-@media (max-width: 700px) {
-  #demo-drawer { grid-template-columns: 1fr; }
+.scen { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; text-align: left; padding: 14px 16px; width: 100%; }
+.scen-txt { display: flex; flex-direction: column; gap: 2px; }
+.scen-txt b { font: 600 15px/1.2 var(--font); }
+.scen-txt span { font-size: 12px; color: var(--text-dim); }
+.scen-run { font: 600 11px var(--mono); letter-spacing: 0.12em; color: var(--signal); }
+.scen[aria-pressed="true"] .scen-run { color: var(--warn); }
+.scen[aria-pressed="true"] .scen-run::before { content: "ON · "; }
+.dd-reset { margin-top: 6px; min-height: 46px; border: 1px solid var(--danger); background: transparent; color: #ff8a80; cursor: pointer; font: 600 12px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; }
+@media (max-width: 860px) {
+  .dd-console { grid-template-columns: 1fr; }
+  .dd-top { grid-column: 1; }
   .dd-col + .dd-col { border-left: 0; border-top: 1px solid var(--border); }
 }
 

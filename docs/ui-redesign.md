@@ -71,3 +71,19 @@ existing `?budget=demo`, `?variant=`, `?data=`.
 - All four views render on real data at 1440×900 and 1024×768, checked by headless screenshots.
 - Replan, link-lost and storm states render in the tablet; hazard in the rover view.
 - `node --test web/tests` passes; no console errors on load.
+
+## Revision 2: match every mockup screen (branch `ui/match-mockups`)
+
+Revision 1 only restyled the existing planner, stop card and HUD. Revision 2 rebuilds them to the mockups:
+
+| Screen | Now |
+| --- | --- |
+| Planner | Full-bleed map framed on the route; **layer rail** (left), **GO TO** search, legend of active layers, **route sheet** (right): stats, stop timeline, CUTS/AVOIDS lines, backup route, START EVA, safety strip, "Mission details" (the old safety / environment / alerts / credits cards) |
+| Stop preview | **Dossier** in the sheet: photo grid + mosaic strip, km / arrive / work / time home, what to expect, rock unit, minerals, tube list at B, Show on map / Skip stop |
+| Helmet HUD | **Visor** over a Perseverance photo near the crew: heading tape, one arrow relative to travel, distance + stop + ETA, air and time-home rings, one alert chip, reroute confirm card (Enter) |
+| Demo menu | **Centered console**: switch view (incl. stop preview, EV1/EV2 tablet), sim clock with speed buttons and stop markers, budget, scenarios with RUN → (jumps to the view that shows the effect), reset |
+| Tablet | + crew switch, map zoom, link-lost button set (Start walking home / Wait for link / I see a landmark) |
+| Rover | + speed and tubes-loaded card (both derived from the sim) |
+
+Not in the data, so not shown: rover battery (mockup placeholder), "Keep plan" on the reroute card (the sim has
+no reject event), rock-unit search in GO TO (no unit locations in the web data).

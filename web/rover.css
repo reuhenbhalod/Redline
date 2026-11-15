@@ -74,3 +74,5 @@
   #rover.rv-root { grid-template-columns: 1fr; overflow: auto; }
   #rover .rv-cam { grid-template-rows: 380px auto auto; }
 }
+#rover .rv-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+#rover .rv-stats b { display: block; font: 600 16px var(--mono); margin-top: 2px; }

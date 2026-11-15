@@ -40,7 +40,8 @@ URL options:
 | `?t=<min>` | Seek the sim to that time after load (e.g. `?mode=tablet&t=24`) |
 | `?fault=link,air,storm,hazard` | Turn faults on from the start (e.g. `?mode=rover&fault=hazard&t=97`) |
 | `?slow=1` | Slow pace on from the start (with `?budget=demo&t=40` the tablet shows the reroute card) |
-| `?demo=1` | Open the DEMO drawer |
+| `?demo=1` | Open the DEMO console |
+| `?stop=A` | Open the stop preview for A (or B, H) |
 | `?variant=skipA` | Start with another route variant as the plan |
 | `?budget=demo` | Start with the DEMO budget (240 min); `?budget=<minutes>` sets another demo value |
 
