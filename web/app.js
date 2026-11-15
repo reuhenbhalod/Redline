@@ -8,6 +8,7 @@ import { initPanels } from './panels.js';
 import { initTablet } from './tablet.js';
 import { initPlanner } from './planner.js';
 import { initEvents } from './events.js';
+import { parseWalkGrid } from './pathfind.js';
 
 // ---------------------------------------------------------------------------
 // Tunable demo constants (shown in the UI as assumptions where relevant).
@@ -404,6 +405,10 @@ async function loadData() {
       try { timeHome = parseTimeHome(buf, routes.time_home); } catch (e) { errors.push(e); }
     }
   }
+  // walking-time grid for live detours (optional: without it the sim falls back to the precomputed rock-field detour)
+  let walkGrid = null;
+  const wgMeta = await grab('walk_grid.json', 'json', true);
+  if (wgMeta) walkGrid = parseWalkGrid(await grab(wgMeta.file || 'walk_time.bin', 'bin', true), wgMeta);
   if (routes && !Array.isArray(routes.variants)) errors.push({ name: 'routes.json', url: '', reason: 'missing variants[]' });
   if (stops && !Array.isArray(stops)) errors.push({ name: 'stops.json', url: '', reason: 'expected an array of stops' });
   if (errors.length) {
@@ -437,6 +442,7 @@ async function loadData() {
       arrays: gridsReadme?.arrays || {}, limits: gridsReadme?.limits || {},
     },
     timeHome,
+    walkGrid,
     fake: !!(bounds.fake || routes.fake || env.fake),
     raw: { bounds, layers: layersRaw, site, depot: depotRaw, photos: photosRaw, roverPath: roverRaw, envData, env: envLegacy, safety: safetyRaw, provenance: provRaw, gridsReadme },
   };
@@ -651,6 +657,7 @@ async function boot() {
     getState, setState, subscribe,
     on, off, emit,
     timeHomeAt: makeTimeHomeAt(data.timeHome),
+    walkGrid: data.walkGrid,
     setMode,
     toast,
     els: {
@@ -669,7 +676,7 @@ async function boot() {
     // The HUD has its own alert banner and replan card, and the planner shows the replan card in the
     // side panel, so sim alerts only toast in planner mode and replan proposals never toast.
     const m = getState().mode;
-    if (m === 'tablet' || a.kind === 'replan') return;
+    if ((m === 'tablet' && a.kind !== 'marked') || a.kind === 'replan') return;   // marked-hazard warnings show everywhere
     toast({ level: a.level, title: a.title, text: a.text, timeoutMs: a.level === 'danger' ? 6000 : 4000 });
   });
 

@@ -14,6 +14,7 @@ const TRIGGER_TITLE = {
   air: 'Air is running short: head home',
   storm: 'Storm: head home now',
   hazard: 'Rover found a rock field ahead',
+  marked: 'Your route crosses a hazard you marked',
 };
 const ICON = {
   hazard: '<path d="M12 3 22 20H2Z"/><path d="M12 10v4M12 17v.5"/>',
@@ -101,22 +102,20 @@ export function initTablet(ctx) {
   const mm = createMiniMap(f.map, { url: data.url('basemap.png'), widthPx: config.widthPx, heightPx: config.heightPx,
     pixelM: config.pixelM, label: 'Live map around the crew' });
   const mmTrail = mm.line('mm-trail');
+  const mmAbandoned = [0, 1, 2, 3].map(() => mm.line('mm-abandoned'));   // old route pieces given up (red)
   const mmRoute = mm.line('mm-route');
+  const mmPendingAbandoned = mm.line('mm-abandoned is-pending');
   const mmHome = mm.line('mm-home');
   const mmProposed = mm.line('mm-proposed');
   const mmHazard = mm.circle('mm-hazard');
-  const mmMarks = [];
+  const mmMarkZones = [0, 1, 2, 3, 4, 5].map(() => mm.circle('mm-mark-zone'));
+  const mmMarkPins = [0, 1, 2, 3, 4, 5].map(() => mm.circle('mm-mark'));
   const stopSetters = data.stops.map((st) => [st, mm.diamond(`mm-stop mm-stop-${st.kind || 'science'}`, st.id, 16)]);
   const ring1 = mm.circle('mm-ring');
   const rover = mm.square('mm-rover', 9);
   const ev2 = mm.circle('mm-ev2');
   const ev1 = mm.circle('mm-ev1');
   stopSetters.forEach(([st, s]) => s(st.px));
-  const markNodes = [];
-  const drawMarks = () => {
-    while (markNodes.length < mmMarks.length) markNodes.push(mm.circle('mm-mark'));
-    mmMarks.forEach((p, i) => markNodes[i](p, 5));
-  };
 
   let wayHome = false;
   let zoomF = 1;
@@ -146,8 +145,8 @@ export function initTablet(ctx) {
     } else if (act === 'landmark') {
       ctx.toast({ level: 'ok', title: 'Landmark confirmed', text: `Position fix requested at ${at} (demo).` });
     } else if (act === 'hazard') {
-      if (me) { mmMarks.push(me.px); drawMarks(); }
-      ctx.toast({ level: 'warn', title: 'Hazard marked', text: `Pinned at your position ${at}; sent to the rover and your buddy (demo).` });
+      ctx.emit('hazard:mark');
+      ctx.toast({ level: 'warn', title: 'Hazard marked', text: `Pinned at your position ${at}; shared with the rover and your buddy. Routes will now keep 40 m clear of it.` });
     } else if (act === 'photo') {
       ctx.toast({ level: 'ok', title: 'Photo saved', text: `Tagged with position and time ${at} (demo).` });
     } else if (act === 'home') {
@@ -179,10 +178,10 @@ export function initTablet(ctx) {
           <span class="tbl-suggest-label">${esc(p.label)}</span>
           ${p.savesMin > 0 ? `<span class="tbl-ok">Saves ${esc(Math.round(p.savesMin))} min</span>` : ''}
         </div>
+        <button type="button" class="tbl-accept" data-confirm="${esc(p.id)}">Accept new route</button>
         <p class="tbl-safe"><b>Why it is safe:</b> ${esc(p.safety?.text || '')}</p>
         ${(p.why || []).length ? `<ul class="tbl-why">${p.why.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
         ${rejected ? `<details class="tbl-rej"><summary>Options that did not fit</summary><ul>${rejected}</ul></details>` : ''}
-        <button type="button" class="tbl-accept" data-confirm="${esc(p.id)}">Accept new route</button>
         <span class="tbl-dim tbl-small">Both crew see this. The walk is paused until someone accepts.</span>
       </div>`;
   }
@@ -236,7 +235,7 @@ export function initTablet(ctx) {
     let banner = '', level = '';
     if (!linkOk) { banner = `Rover link lost · suit-only mode · position from step counting (±${Math.round(ev.uncertaintyM)} m)`; level = 'danger'; }
     else if (storm) { banner = 'Storm warning · head home on the safe route'; level = 'danger'; }
-    else if (sim.hazard && !sim.pendingReplan && sim.status !== 'done') { banner = 'Rock field ahead · following the rover’s detour'; level = 'warn'; }
+    else if (sim.active?.kind === 'hazard' && !sim.pendingReplan && sim.status !== 'done') { banner = `${sim.active.label} · old route in red`; level = 'warn'; }
     else if (sim.air?.level === 'danger') { banner = 'Air margin critical · turn around'; level = 'danger'; }
     else if (sim.air?.level === 'warn') { banner = 'Air margin getting short'; level = 'warn'; }
     f.banner.hidden = !banner;
@@ -305,18 +304,37 @@ export function initTablet(ctx) {
 
     // map: keep the crew centered in the open area to the right of the panels
     const mapW = f.map.clientWidth || 1000;
-    const colW = root.querySelector('.tbl-col').getBoundingClientRect().width + 20;
-    const span = Math.max(160, Math.min(1400, mapW / PX_PER_GRID)) * zoomF;
+    const pr = sim.pendingReplan;
+    const colW = (pr ? f.replan.firstElementChild || root.querySelector('.tbl-col') : root.querySelector('.tbl-col')).getBoundingClientRect().width + 20;
+    let span = Math.max(160, Math.min(1400, mapW / PX_PER_GRID)) * zoomF;
+    let focus = null;
+    if (pr?.hazard) {
+      // a hazard detour: zoom out to show the hazard, the old route (red) and the new one
+      const pts = [ev.px, ...(pr.abandoned || []), [pr.hazard.px[0] - pr.hazard.radiusPx, pr.hazard.px[1] - pr.hazard.radiusPx], [pr.hazard.px[0] + pr.hazard.radiusPx, pr.hazard.px[1] + pr.hazard.radiusPx]];
+      const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+      const bw = Math.max(...xs) - Math.min(...xs), bh = Math.max(...ys) - Math.min(...ys);
+      const openW = Math.max(200, mapW - colW), mapH = f.map.clientHeight || 600;
+      span = Math.max(160, (bw * 1.5) * (mapW / openW), (bh * 1.6) * (mapW / mapH));
+      focus = [(Math.max(...xs) + Math.min(...xs)) / 2, (Math.max(...ys) + Math.min(...ys)) / 2];
+    }
     const scale = mapW / span;                              // screen px per grid px (viewBox fits the width)
     const shift = (colW / 2) / scale;
     const snap = !s.playing;
     const evP = smooth('ev', ev.px, { snap });
     const buddyP = smooth('buddy', buddy.px, { snap });
     const roverP = rv?.px ? smooth('rover', rv.px, { snap }) : null;
-    mm.view([evP[0] - shift, evP[1]], span);
+    const camC = focus || evP;
+    mm.view([camC[0] - shift, camC[1]], span);
     mmTrail(sim.trail);
+    const ab = sim.abandoned || [];
+    const recent = ab.slice(-mmAbandoned.length);
+    mmAbandoned.forEach((ln, i) => ln(recent[i]?.path || null));
     mmRoute(sim.active?.path);
-    mmProposed(sim.pendingReplan?.path || null);
+    mmPendingAbandoned(pr?.abandoned?.length > 1 ? pr.abandoned : null);
+    mmProposed(pr?.path || null);
+    const marks = sim.marks || [];
+    mmMarkZones.forEach((c, i) => c(marks[i]?.px || null, marks[i]?.radiusPx || 0));
+    mmMarkPins.forEach((c, i) => c(marks[i]?.px || null, 5));
     mmHome(homeMode ? (sim.home?.path || null) : null);
     f.mapNote.hidden = !homeMode;
     mmHazard(sim.hazard?.px || null, sim.hazard?.radiusPx || 0);

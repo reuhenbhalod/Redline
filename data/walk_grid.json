@@ -1,0 +1,9 @@
+{
+  "file": "walk_time.bin",
+  "width": 1000,
+  "height": 1000,
+  "stride_px": 2,
+  "cell_m": 4.0,
+  "unit": "deciseconds per axis step; 255 = no-go",
+  "source": "pipeline/08_walk_grid.py (engine terrain time model)"
+}

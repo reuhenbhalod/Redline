@@ -162,7 +162,7 @@ export function initPanels(ctx) {
         const rejected = (p.rejected || []).map((r) => `
           <li><span class="pn-tag">${esc(OPTION_LABEL[r.kind] || r.kind)}</span> ${esc(r.label || '')}
           ${Number.isFinite(r.overByMin) ? `<span class="pn-dim">— over budget by ${esc(fmtMinLong(r.overByMin))}</span>` : ''}</li>`).join('');
-        const trig = { schedule: 'Behind schedule', air: 'Air running short', storm: 'Storm', hazard: 'Rover: rock field' }[p.trigger] || 'Replan';
+        const trig = { schedule: 'Behind schedule', air: 'Air running short', storm: 'Storm', hazard: 'Rover: rock field', marked: 'Marked hazard ahead' }[p.trigger] || 'Replan';
         html += `
         <section class="pn-card pn-replan" data-kind="${esc(p.kind)}" aria-label="Replan proposal">
           <div class="pn-replan-head">
@@ -171,9 +171,9 @@ export function initPanels(ctx) {
           </div>
           <div class="pn-kv">
             <div><span>At</span><b>${esc(p.atStopName || stopName(p.atStopId) || 'mid-leg')}</b></div>
-            <div><span>${p.checkpoint || p.trigger === 'hazard' ? 'At' : 'Arrived'}</span><b>${esc(tPlus(p.arrivedT))}${Number.isFinite(p.plannedArriveT) ? ` <small class="pn-dim">(plan ${esc(tPlus(p.plannedArriveT))})</small>` : ''}</b></div>
+            <div><span>${p.checkpoint || (p.trigger === 'hazard' || p.trigger === 'marked') ? 'At' : 'Arrived'}</span><b>${esc(tPlus(p.arrivedT))}${Number.isFinite(p.plannedArriveT) ? ` <small class="pn-dim">(plan ${esc(tPlus(p.plannedArriveT))})</small>` : ''}</b></div>
             <div><span>Behind schedule</span><b class="pn-warn">${esc(fmtMinLong(p.behindMin))}</b></div>
-            ${p.trigger === 'hazard'
+            ${p.trigger === 'hazard' || p.trigger === 'marked'
               ? `<div><span>Adds</span><b class="pn-warn">${esc(fmtMinLong(Math.abs(p.savesMin)))}</b></div>`
               : `<div><span>Saves</span><b class="pn-ok">${esc(fmtMinLong(p.savesMin))}</b></div>`}
           </div>
