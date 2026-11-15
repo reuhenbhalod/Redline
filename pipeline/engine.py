@@ -1142,7 +1142,7 @@ def load_real(data_dir="data", cfg=default_cfg):
     h, a, b = site["habitat"], site["stop_a"], site["depot_center"]
     minerals = []
     if a.get("clay_frac"):
-        minerals.append(f"Fe/Mg clay ({a['clay_frac']:.0%} of the work area)")
+        minerals.append(f"Clay-bearing ({a['clay_frac']:.0%} of identified CRISM cells within 75 m)")
     if a.get("carb_frac"):
         minerals.append(f"carbonate ({a['carb_frac']:.0%} of the work area)")
     cored = ", ".join(a.get("depot_samples_cored_here") or [])

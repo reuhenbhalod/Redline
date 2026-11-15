@@ -32,7 +32,7 @@
   "sol": 460,
   "why": "Delta thinly layered bedrock at the delta front, where CRISM maps clay minerals that form in water and can preserve signs of past life. Perseverance cored Bearwallow here",
   "expect": "Layered sediments; slopes under 7.2° across the work area (90th percentile), no sand",
-  "minerals": "Fe/Mg clay (100% of the work area)",
+  "minerals": "Clay-bearing (100% of identified CRISM cells within 75 m)",
   "rock_unit": "Delta thinly layered",
   "photos": [
    "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/mosaics/mastcam_z_mosaic_sols_466_474_left_browse.png",

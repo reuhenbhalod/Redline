@@ -324,7 +324,7 @@ export function initPanels(ctx) {
         <h3 class="pn-h">Site facts <span class="pn-dim">(site.json)</span></h3>
         <div class="pn-kv">
           ${row('Sample cored here', cored ? esc(cored) : '', 'Perseverance cored this depot sample at this waypoint')}
-          ${row('Clay fraction', esc(pct(a.clay_frac)), 'CRISM Fe/Mg clay fraction within 75 m')}
+          ${row('Clay fraction', esc(pct(a.clay_frac)), 'CRISM clay-bearing share of identified cells within 75 m (olivine + smectite, kaolinite, smectites)')}
           ${row('Carbonate fraction', esc(pct(a.carb_frac)), 'CRISM carbonate fraction within 75 m')}
           ${row('Slope p90 (HiRISE)', Number.isFinite(a.hirise_slope_p90_deg) ? `${esc(num(a.hirise_slope_p90_deg, 1))}°` : '', '90th percentile slope across the work area, HiRISE DTM')}
           ${row('Roughness p90', Number.isFinite(a.hirise_rough_p90_m) ? `${esc(num(a.hirise_rough_p90_m, 2))} m` : '')}
