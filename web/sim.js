@@ -9,7 +9,7 @@
 
 import {
   clamp, lerp, distPx, distM, cumulativeDistM, searchSorted, interpolateOnPath, interpolateArray,
-  distanceAt, positionAtDistance, bearingDeg, fmtMin,
+  distanceAt, positionAtDistance, bearingDeg, fmtMin, effectiveBudget,
 } from './util.js';
 
 const EPS = 1e-9;
@@ -276,6 +276,8 @@ export function initSim(ctx) {
 
   // ---------------------------------------------------------------- helpers
   const st = () => ctx.getState();
+  // Suit budget in force: the real one (config) or the labelled DEMO override (state.demoBudgetMin).
+  const bud = () => effectiveBudget(st(), config);
   const stateInputs = () => ({ faults: { ...(st().faults || {}) }, slowPace: !!st().slowPace });
   const inputs = () => replay || stateInputs();
   const sameInputs = (a, b) => !!a && !!b && a.slowPace === b.slowPace
@@ -310,11 +312,12 @@ export function initSim(ctx) {
     return data.variantsById[S?.plannedVariantId] || data.variantsById[st().plannedVariantId] || variants[0];
   }
 
-  function plannedArriveFor(id) {
-    if (isReturnKind(S.active.kind)) return null;
-    const sp = plannedVariant().stop_plan || [];
-    const hit = sp.slice(1).find((e) => e.id === id);
-    return hit ? hit.arrive_min : null;
+  // Planned arrival at a stop mark of the ACTIVE route, on the route clock (S.routeT). Before any
+  // reroute this is the variant's stop_plan time; after one it is the new route's plan (rebased at
+  // the switch), so "planned" and "behind" (S.t - S.routeT) always use the same clock.
+  function plannedArriveFor(mark) {
+    if (!mark || isReturnKind(S.active.kind)) return null;
+    return Number.isFinite(mark.arriveMin) ? mark.arriveMin : null;
   }
 
   function freshState(variantId) {
@@ -464,7 +467,7 @@ export function initSim(ctx) {
   }
 
   function airNow(ev1px) {
-    const leftMin = config.budgetMin - S.usedMin;
+    const leftMin = bud().budgetMin - S.usedMin;
     const th = timeHomeFrom(ev1px);
     // The walk home is the slower of the time-home grid (best case from this spot) and the way
     // home the sim can actually route (backtrack / abort route). It burns air at the current
@@ -472,7 +475,7 @@ export function initSim(ctx) {
     const way = wayHomeMin();
     const walkHome = Number.isFinite(th.min) ? Math.max(th.min, way) : way;
     const homeAir = homeAirMin(walkHome, burnFactor(), paceFactor());
-    const neededMin = homeAir + config.reserveMin;
+    const neededMin = homeAir + bud().reserveMin;
     const marginMin = leftMin - neededMin;
     return { leftMin, timeHomeMin: th.min, timeHomeSource: th.source, wayHomeMin: way, homeAirMin: homeAir, neededMin, marginMin };
   }
@@ -589,24 +592,26 @@ export function initSim(ctx) {
       ? pacedDuration(routeForPace.path, routeForPace.tMin, routeForPace.tMin[0], routeForPace.tMin[routeForPace.tMin.length - 1], pace)
       : minutesPlanned;
     const projectedReturnT = S.t + pacedMin;
-    const leftMin = config.budgetMin - S.usedMin;
+    const leftMin = bud().budgetMin - S.usedMin;
     const airLeftAtReturnMin = leftMin - pacedMin * burn;
-    const marginMin = config.budgetMin - config.reserveMin - projectedReturnT;
-    const spare = Math.min(marginMin, airLeftAtReturnMin - config.reserveMin);
+    const marginMin = bud().budgetMin - bud().reserveMin - projectedReturnT;
+    const spare = Math.min(marginMin, airLeftAtReturnMin - bud().reserveMin);
     const withinBudget = spare >= -0.5;
     const airRunsOut = airLeftAtReturnMin < 0;
     let text;
     if (withinBudget) {
-      text = `Back by ${fmtMin(projectedReturnT)} with ${Math.max(0, Math.round(spare))} min of air to spare (${config.reserveMin} min reserve kept)`;
+      text = `Back by ${fmtMin(projectedReturnT)} with ${Math.max(0, Math.round(spare))} min of air to spare (${bud().reserveMin} min reserve kept)`;
     } else if (airRunsOut) {
-      text = `NOT within budget: back by ${fmtMin(projectedReturnT)}, but air runs out about ${Math.round(-airLeftAtReturnMin)} min before reaching home, even using the whole ${config.reserveMin} min reserve. Best option left: go now`;
+      text = `NOT within budget: back by ${fmtMin(projectedReturnT)}, but air runs out about ${Math.round(-airLeftAtReturnMin)} min before reaching home, even using the whole ${bud().reserveMin} min reserve. Best option left: go now`;
     } else {
-      text = `NOT within budget: back by ${fmtMin(projectedReturnT)}, ${Math.round(-spare)} min into the ${config.reserveMin} min reserve. Best option left`;
+      text = `NOT within budget: back by ${fmtMin(projectedReturnT)}, ${Math.round(-spare)} min into the ${bud().reserveMin} min reserve. Best option left`;
     }
     if (pace < 1) text += `. Times are at the current slow pace (${pace}x)`;
     if (burn > 1) text += `. Air use is ${burn}x planned`;
+    const B = bud();
+    if (B.demo) text += `. Against the ${B.budgetMin} min demo budget (${B.note}; real ${B.realBudgetMin} min)`;
     return {
-      projectedReturnT, plannedReturnT, pacedReturnT: projectedReturnT, budgetMin: config.budgetMin, reserveMin: config.reserveMin,
+      projectedReturnT, plannedReturnT, pacedReturnT: projectedReturnT, budgetMin: bud().budgetMin, reserveMin: bud().reserveMin,
       marginMin, airLeftAtReturnMin, spareMin: spare, withinBudget, airRunsOut, text,
     };
   }
@@ -667,8 +672,8 @@ export function initSim(ctx) {
     const pace = paceFactor();
     const durationOf = pace === 1 ? null
       : (o) => pacedDuration(o.path, o.t_min, o.t_min[0], o.t_min[o.t_min.length - 1], pace);
-    return chooseReplanOption(options, S.t, config.budgetMin, config.reserveMin, {
-      burnFactor: burnFactor(), airLeftMin: config.budgetMin - S.usedMin, durationOf,
+    return chooseReplanOption(options, S.t, bud().budgetMin, bud().reserveMin, {
+      burnFactor: burnFactor(), airLeftMin: bud().budgetMin - S.usedMin, durationOf,
     });
   }
 
@@ -766,19 +771,19 @@ export function initSim(ctx) {
       const aborted = isReturnKind(S.active.kind);
       S.status = aborted ? 'aborted' : 'done';
       deactivateAlerts((a) => a.kind === 'air' || a.kind === 'storm' || a.kind === 'replan');
-      const left = config.budgetMin - S.usedMin;
-      const intoReserve = left < config.reserveMin - 0.5;
+      const left = bud().budgetMin - S.usedMin;
+      const intoReserve = left < bud().reserveMin - 0.5;
       const ranOut = left < 0;
       pushAlert({
         level: ranOut ? 'danger' : (aborted || intoReserve) ? 'warn' : 'ok', kind: 'done',
         title: `Back at ${stopName(mark.id)}: walk ${aborted ? 'aborted' : 'complete'}${ranOut ? ', AIR BUDGET OVERRUN' : intoReserve ? ', reserve used' : ''}`,
         text: `T+${fmtMin(S.t)}, air left ${Math.round(left)} min`
-          + (ranOut ? ` (${Math.round(-left)} min past the budget)` : intoReserve ? ` (${Math.round(config.reserveMin - left)} min into the ${config.reserveMin} min reserve)` : ''),
+          + (ranOut ? ` (${Math.round(-left)} min past the budget)` : intoReserve ? ` (${Math.round(bud().reserveMin - left)} min into the ${bud().reserveMin} min reserve)` : ''),
       });
       if (st().playing) ctx.setState({ playing: false });
       return;
     }
-    const planned = plannedArriveFor(mark.id);
+    const planned = plannedArriveFor(mark);
     const behind = Math.max(0, S.t - S.routeT);
     pushAlert({
       level: 'info', kind: 'arrive', title: `Arrived at ${stopName(mark.id)}`,
@@ -867,7 +872,7 @@ export function initSim(ctx) {
     const p = {
       id: `${trigger}@${S.t.toFixed(1)}`, trigger, atStopId: at ? at.id : null,
       atStopName: at ? stopName(at.id) : 'mid-leg', arrivedT: S.t,
-      plannedArriveT: at ? plannedArriveFor(at.id) : null, behindMin: Math.max(0, S.t - S.routeT),
+      plannedArriveT: at ? plannedArriveFor(at) : null, behindMin: Math.max(0, S.t - S.routeT),
       kind, label, option, minutes: b.minutes, savesMin: option.saves_min, why, path: b.route.path,
       safety: safetyFor(b.minutes, reb), rejected: [],
     };
@@ -1021,14 +1026,14 @@ export function initSim(ctx) {
     }
     if (S.turnaround || S.pending || isReturnKind(S.active.kind)) return;
     if (S.status !== 'walking' && S.status !== 'working') return;
-    if (!turnaroundDue(air.leftMin, air.homeAirMin, config.reserveMin, config.turnaroundMarginMin)) return;
+    if (!turnaroundDue(air.leftMin, air.homeAirMin, bud().reserveMin, config.turnaroundMarginMin)) return;
     S.turnaround = true;
     const homeBound = alreadyHeadingHome();
     pushAlert({
       level: 'danger', kind: 'air', active: true, title: 'Turn around: air for the walk home is getting short',
       text: `Air left ${Math.round(air.leftMin)} min; the walk home needs ${Math.round(air.homeAirMin)} min of air`
         + (burn !== 1 || paceFactor() !== 1 ? ` (${burn}x burn${paceFactor() !== 1 ? ', slow pace' : ''})` : '')
-        + ` + ${config.reserveMin} min reserve.`
+        + ` + ${bud().reserveMin} min reserve.`
         + (homeBound ? (air.marginMin < -config.turnaroundMarginMin
           ? ' Already on the shortest way home: keep walking, the reserve will be used.'
           : ' Already heading home: keep walking, no more stops.') : ' Reroute home proposed.'),
@@ -1057,8 +1062,8 @@ export function initSim(ctx) {
       case 'awaiting_confirm': return `Reroute proposed${S.pending?.atStopId ? ` at ${S.pending.atStopName}` : ''}: confirm to continue`;
       case 'returning': return `${S.storm.on ? 'Storm: r' : 'R'}eturning to ${stopName(H_ID)}`;
       case 'done': case 'aborted': {
-        const left = config.budgetMin - S.usedMin;
-        const note = left < 0 ? ', air budget overrun' : left < config.reserveMin - 0.5 ? ', reserve used' : '';
+        const left = bud().budgetMin - S.usedMin;
+        const note = left < 0 ? ', air budget overrun' : left < bud().reserveMin - 0.5 ? ', reserve used' : '';
         return `Back at ${stopName(H_ID)}: walk ${S.status === 'done' ? 'complete' : 'aborted'}${note}`;
       }
       default: return S.status;
@@ -1099,7 +1104,7 @@ export function initSim(ctx) {
     const mk = finished() ? null : a.stopMarks[S.markIdx];
     if (mk) {
       const spx = stopPx(mk.id) || a.path[mk.pathIndex];
-      const pa = plannedArriveFor(mk.id);
+      const pa = plannedArriveFor(mk);
       nextStop = {
         id: mk.id, name: stopName(mk.id), px: spx,
         distanceM: Math.max(0, cum[mk.pathIndex] - along),
@@ -1114,14 +1119,17 @@ export function initSim(ctx) {
     const projectedReturnT = S.t + pacedDuration(a.path, a.tMin, S.routeT, endT, pace);
     const f = inputs().faults || {};
     const dust = data.env?.dust ?? 'unknown';
+    const tau = data.env?.dustTau?.estimate;
+    const dustTau = Number.isFinite(tau) ? tau : null;
     const solarAlert = !!data.env?.solar_alert || !!f.storm;
     const dustLevel = /high|severe|storm/i.test(dust) ? 'danger' : /moderate|medium/i.test(dust) ? 'warn' : 'ok';
     const envLevel = f.storm ? 'danger' : (solarAlert ? 'warn' : dustLevel === 'danger' ? 'warn' : dustLevel);
     const envText = f.storm
       ? (S.status === 'idle' ? 'STORM: EVA on hold' : finished() ? 'STORM: crew back at the habitat' : 'STORM: walk aborted, heading home')
-      : `Dust ${dust} · ${solarAlert ? 'SOLAR ALERT' : 'no solar alert'}`;
+      : `Dust ${dust}${dustTau != null ? ` (τ ${dustTau.toFixed(2)})` : ''} · ${solarAlert ? 'SOLAR ALERT' : 'no solar alert'}`;
 
     const visibleHomeMin = air.timeHomeMin;
+    const B = bud();
     const pending = S.pending;
 
     return {
@@ -1139,7 +1147,7 @@ export function initSim(ctx) {
       crew,
       rover: { px: rov.px, linkOk: S.link.ok, aheadM: Math.max(0, Math.min(config.roverAheadM, total - along)) },
       air: {
-        budgetMin: config.budgetMin, reserveMin: config.reserveMin,
+        budgetMin: B.budgetMin, reserveMin: B.reserveMin, budgetDemo: B.demo,
         usedMin: S.usedMin, leftMin: air.leftMin, burnFactor: burn,
         timeHomeMin: air.timeHomeMin, timeHomeSource: air.timeHomeSource,
         wayHomeMin: air.wayHomeMin, homeAirMin: air.homeAirMin, neededMin: air.neededMin, paceFactor: pace,
@@ -1151,7 +1159,7 @@ export function initSim(ctx) {
         plannedReturnT: plannedVariant().est_min ?? (plannedVariant().t_min?.at(-1) ?? 0),
         projectedReturnT,
       },
-      env: { dust, solarAlert, stormActive: !!f.storm, level: envLevel, text: envText },
+      env: { dust, dustTau, solarAlert, stormActive: !!f.storm, level: envLevel, text: envText },
       link: { ok: S.link.ok, lostSinceT: S.link.lostSinceT },
       home: {
         px: homePx, bearingDeg: bearingDeg(ev1, homePx), straightM: distM(ev1, homePx, pixelM),
@@ -1206,7 +1214,7 @@ export function initSim(ctx) {
    * after the target, and the fault toggles in the UI are set to what was in force at the target.
    */
   function seek(target) {
-    const goal = clamp(Number(target) || 0, 0, config.budgetMin * 2);
+    const goal = clamp(Number(target) || 0, 0, bud().budgetMin * 2);
     timeline = timeline.filter((e) => e.t <= goal + EPS);
     const events = timeline.filter((e) => e.type === 'inputs');
     const confirms = timeline.filter((e) => e.type === 'confirm').map((e) => ({ ...e, used: false }));
@@ -1297,6 +1305,11 @@ export function initSim(ctx) {
     if (!S) return;
     if (changed.has('plannedVariantId') && S.status === 'idle' && s.plannedVariantId !== S.plannedVariantId) {
       hardReset();
+      publish();
+    }
+    if (changed.has('demoBudgetMin')) {
+      // the budget is read live through bud(): while idle this just rebuilds sim.air; after the start
+      // (the select is disabled then) it applies from the next step, with no reset
       publish();
     }
     if (changed.has('faults') || changed.has('slowPace')) {

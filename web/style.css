@@ -37,6 +37,17 @@
   --stop-science: #e8734d;
   --stop-depot: #6cb4ee;
 
+  /* Data basis and demo settings (safety params, assumptions, Demo budget) */
+  --basis-primary: #5fc48a;     /* from a primary NASA / mission source */
+  --basis-secondary: #6cb4ee;   /* secondary source (quoted guideline) */
+  --basis-assumption: #f2b33d;  /* our assumption */
+  --demo: #ffcf66;              /* DEMO SETTING text / border */
+  --demo-bg: rgba(255, 207, 102, 0.12);
+
+  /* Real-data map extras (map.js) */
+  --rover-path: #c9a0ff;        /* Perseverance traverse */
+  --tube: #ffffff;              /* depot sample tubes */
+
   /* HUD */
   --hud-bg: #05080a;
   --hud-fg: #9ff5d0;
@@ -92,6 +103,15 @@ button, select, input { font: inherit; color: inherit; }
   font: 700 var(--fs-xs)/1.4 var(--mono); letter-spacing: 0.6px;
 }
 .badge-fake { background: var(--warn); color: #2a1a00; }
+/* DEMO settings (the Demo budget): striped amber so they never read as real numbers. */
+.badge-demo { background: var(--demo-bg); color: var(--demo); border: 1px dashed var(--demo); }
+#sel-budget[data-demo="true"] { border: 1px dashed var(--demo); color: var(--demo); background: var(--demo-bg); font-weight: 600; }
+/* Basis badges for safety params / assumptions (panels.js, hud.js may reuse the classes). */
+.basis { display: inline-block; padding: 0 5px; border-radius: 3px; font: 700 10px/1.6 var(--mono); letter-spacing: 0.4px; vertical-align: 1px; }
+.basis[data-basis="primary"] { color: var(--basis-primary); border: 1px solid var(--basis-primary); }
+.basis[data-basis="secondary"] { color: var(--basis-secondary); border: 1px solid var(--basis-secondary); }
+.basis[data-basis="assumption"] { color: var(--basis-assumption); border: 1px solid var(--basis-assumption); }
+.basis[data-basis="demo"] { color: var(--demo); border: 1px dashed var(--demo); background: var(--demo-bg); }
 
 .clock { font: 600 var(--fs-md) var(--mono); min-width: 64px; text-align: right; }
 .chip {
@@ -102,7 +122,9 @@ button, select, input { font: inherit; color: inherit; }
 .chip[data-level="warn"] { color: var(--warn); border-color: var(--warn); }
 .chip[data-level="danger"] { color: #fff; background: var(--danger); border-color: var(--danger); }
 
-#scrub { width: 150px; accent-color: var(--mars); }
+#scrub { width: 150px; min-width: 56px; flex: 0 1 150px; accent-color: var(--mars); }
+/* The sim group may shrink (the scrubber gives way first) so the demo toggles never run off screen. */
+.tb-sim { flex: 0 1 auto; }
 select {
   background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm);
   padding: 5px 6px;
@@ -151,6 +173,10 @@ body[data-mode="hud"] #planner { visibility: hidden; }
 @media (max-width: 1560px) {
   .brand-title { display: none; }
   #topbar { gap: 10px; }
+  #scrub { width: 100px; flex-basis: 100px; }
+}
+@media (max-width: 1440px) {
+  #demo-badge .tb-long { display: none; }   /* the dashed select still reads "Demo 240 min" */
 }
 @media (max-width: 1280px) {
   :root { --panel-w: 320px; }

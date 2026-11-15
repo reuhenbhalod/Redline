@@ -19,6 +19,7 @@
       <span class="brand-mark" aria-hidden="true"></span>
       <h1 class="brand-title">Marswalk Planner</h1>
       <span id="fake-badge" class="badge badge-fake" hidden title="bounds.json / routes.json are marked fake: true">FAKE DATA</span>
+      <span id="demo-badge" class="badge badge-demo" hidden>DEMO BUDGET</span>
     </div>
 
     <div class="tb-group" role="group" aria-label="Mode">
@@ -41,12 +42,18 @@
         </select>
       </label>
       <button type="button" id="btn-reset" class="btn" title="Reset sim (r)">Reset</button>
-      <input type="range" id="scrub" min="0" max="300" step="0.5" value="0" aria-label="Sim time scrubber">
+      <input type="range" id="scrub" min="0" max="480" step="0.5" value="0" aria-label="Sim time scrubber">
       <span id="clock" class="clock" title="Sim time since leaving the habitat">T+0:00</span>
       <span id="status-chip" class="chip">idle</span>
     </div>
 
     <div class="tb-group tb-toggles" role="group" aria-label="Demo toggles">
+      <label class="tb-field" title="Suit budget used by the sim">
+        <span class="sr-only">Suit budget</span>
+        <select id="sel-budget" aria-label="Suit budget (Demo budget is a DEMO SETTING, not the real suit budget)">
+          <option value="">Real budget</option>
+        </select>
+      </label>
       <button type="button" class="toggle" id="tgl-slow" data-toggle="slowPace" aria-pressed="false" title="Crew walks slower than planned so the replan fires">Slow pace</button>
       <button type="button" class="toggle toggle-fault" id="tgl-link" data-toggle="faults.linkLost" aria-pressed="false" title="Fallback demo: rover radio link lost">Cut rover link</button>
       <button type="button" class="toggle toggle-fault" id="tgl-air" data-toggle="faults.highAir" aria-pressed="false" title="Fallback demo: air use higher than planned">High air use</button>

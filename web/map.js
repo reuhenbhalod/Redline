@@ -5,7 +5,10 @@
 // setRadius / setStyle / class toggles) from the state subscriber, so the ~60 Hz sim
 // tick never re-creates Leaflet layers.
 
-import { pxToLatLng, latLngToPx, imageBounds, pathToLatLngs, lerpPx, clamp, esc, fmtDistM, fmtMinLong } from './util.js';
+import {
+  pxToLatLng, latLngToPx, imageBounds, pathToLatLngs, lerpPx, clamp, esc, fmtDistM, fmtMinLong,
+  pxToLonLat, fmtLonLat, basisLabel,
+} from './util.js';
 
 const KIND_LABEL = { base: 'Base', science: 'Science stop', depot: 'Depot' };
 
@@ -25,7 +28,19 @@ function readColors() {
     text: v('--text', '#f3e9e1'),
     dim: v('--text-faint', '#8a776a'),
     danger: v('--danger', '#ef5a4c'),
+    roverPath: v('--rover-path', '#c9a0ff'),
+    tube: v('--tube', '#ffffff'),
   };
+}
+
+/** Basis badge from style.css: PRIMARY / SECONDARY / ASSUMPTION / DEMO. */
+function basisTag(basis) {
+  return `<span class="basis" data-basis="${esc(basis)}">${esc(basisLabel(basis))}</span>`;
+}
+
+/** Layer note text with "(assumption)" / "(secondary)" / "(primary)" turned into basis badges. */
+function noteHtml(note) {
+  return esc(note).replace(/\((assumption|secondary|primary)\)/gi, (_, b) => basisTag(b.toLowerCase()));
 }
 
 function samePx(a, b) {
@@ -98,6 +113,13 @@ export function initMap(ctx) {
     ov.on('error', () => ctx.toast({ level: 'warn', title: `${layer.label}: layer missing`, text: data.url(layer.file) }));
     overlays[layer.id] = ov;
   }
+  const layerById = Object.fromEntries(data.layers.map((l) => [l.id, l]));
+  const groups = Array.isArray(data.layerGroups) && data.layerGroups.length
+    ? data.layerGroups
+    : [{ id: 'all', label: 'Overlays', layerIds: data.layers.map((l) => l.id) }];
+
+  const roverPath = data.roverPath && Array.isArray(data.roverPath.segments) && data.roverPath.segments.length ? data.roverPath : null;
+  const tubes = Array.isArray(data.depot?.tubes) ? data.depot.tubes.filter((t) => Array.isArray(t.px)) : [];
 
   const LayerControl = L.Control.extend({
     options: { position: 'topright' },
@@ -105,25 +127,69 @@ export function initMap(ctx) {
       const box = L.DomUtil.create('div', 'map-ctl map-layers');
       L.DomEvent.disableClickPropagation(box);
       L.DomEvent.disableScrollPropagation(box);
-      const rows = data.layers.map((layer) => {
-        const legend = (layer.legend || []).map((l) => {
-          const assumed = /limit|no-go|threshold/i.test(l.label || '');
-          return `<li><span class="map-sw" style="background:${esc(l.color)}"></span>${esc(l.label)}${assumed ? ' <em class="map-assume">assumption</em>' : ''}</li>`;
+      const layerRow = (layer) => {
+        const legendItems = layer.legend || [];
+        const legend = legendItems.map((l) => {
+          const assumed = /assumption/i.test(l.label || '') || (data.fake && /limit|no-go|threshold/i.test(l.label || ''));
+          return `<li><span class="map-sw" style="background:${esc(l.color)}"></span><span class="map-lg-t">${esc(l.label)}</span>${assumed ? ` ${basisTag('assumption')}` : ''}</li>`;
         }).join('');
+        const long = legendItems.length > 8;
+        const info = [layer.source, layer.native_res, layer.time_frame].filter(Boolean);
+        const hover = [
+          layer.source && `Source: ${layer.source}`,
+          layer.native_res && `Resolution: ${layer.native_res}`,
+          layer.time_frame && `Time frame: ${layer.time_frame}`,
+          layer.note && `Note: ${layer.note}`,
+        ].filter(Boolean).join('\n');
         return `<div class="map-layer" data-layer="${esc(layer.id)}">
-          <label class="map-layer-head"><input type="checkbox" data-layer-cb="${esc(layer.id)}"> <span>${esc(layer.label)}</span></label>
+          <label class="map-layer-head" title="${esc(hover)}"><input type="checkbox" data-layer-cb="${esc(layer.id)}"> <span>${esc(layer.label)}</span></label>
           <div class="map-layer-body">
-            <ul class="map-legend">${legend}</ul>
+            ${info.length ? `<div class="map-layer-info">${info.map(esc).join(' · ')}</div>` : ''}
+            ${layer.note ? `<div class="map-layer-note">${noteHtml(layer.note)}</div>` : ''}
+            ${long
+              ? `<details class="map-legend-more"><summary>Legend (${legendItems.length} classes)</summary><ul class="map-legend map-legend-scroll">${legend}</ul></details>`
+              : `<ul class="map-legend">${legend}</ul>`}
             <label class="map-opacity">opacity <input type="range" min="0.1" max="1" step="0.05" value="${opacity[layer.id]}" data-layer-op="${esc(layer.id)}"></label>
           </div>
         </div>`;
+      };
+      const groupHtml = groups.map((g) => {
+        const rows = g.layerIds.map((id) => layerById[id]).filter(Boolean).map(layerRow).join('');
+        return rows ? `<div class="map-group"><div class="map-group-title">${esc(g.label)}</div>${rows}</div>` : '';
       }).join('');
-      box.innerHTML = `<div class="map-ctl-title">Layers</div>${rows || '<div class="map-empty">No overlays in layers.json</div>'}`;
+
+      const realRows = [];
+      if (roverPath) {
+        const sr = roverPath.solRange;
+        realRows.push(`<div class="map-layer map-layer-extra" data-extra="rover">
+          <label class="map-layer-head" title="${esc(roverPath.source)}"><input type="checkbox" data-extra-cb="roverPathOn"> <span class="map-sw map-sw-line" style="background:var(--rover-path)"></span><span>Perseverance traverse (real)</span></label>
+          <div class="map-layer-body"><div class="map-layer-info">${sr ? `Sols ${esc(sr[0])}–${esc(sr[1])} · ` : ''}${esc(roverPath.segments.length)} drives in the box · ${esc(roverPath.source)}</div></div>
+        </div>`);
+      }
+      if (tubes.length) {
+        const credit = [...new Set(tubes.map((t) => t.credit).filter(Boolean))].join('; ');
+        realRows.push(`<div class="map-layer map-layer-extra" data-extra="depot">
+          <label class="map-layer-head"><input type="checkbox" data-extra-cb="depotOn"> <span class="map-sw map-sw-dot" style="background:var(--tube)"></span><span>Depot sample tubes (${esc(tubes.length)})</span></label>
+          <div class="map-layer-body"><div class="map-layer-info">Three Forks depot, real drop positions. Zoom in to see each tube; click one for its close-up.${credit ? ` ${esc(credit)}` : ''}</div></div>
+        </div>`);
+      }
+      const realHtml = realRows.length ? `<div class="map-group"><div class="map-group-title">Real rover data</div>${realRows.join('')}</div>` : '';
+
+      box.innerHTML = `<button type="button" class="map-ctl-title map-ctl-toggle" aria-expanded="true" data-act="toggle-layers">
+          <span>Layers</span><span class="map-ctl-count"></span><span class="map-ctl-caret" aria-hidden="true">▾</span></button>
+        <div class="map-layers-body">${groupHtml || '<div class="map-empty">No overlays in layers.json</div>'}${realHtml}</div>`;
+      box.addEventListener('click', (e) => {
+        if (!e.target?.closest?.('[data-act="toggle-layers"]')) return;
+        setCollapsed(!box.classList.contains('is-collapsed'));
+      });
       box.addEventListener('change', (e) => {
-        const id = e.target?.dataset?.layerCb;
-        if (!id) return;
-        const s = ctx.getState();
-        ctx.setState({ layersOn: { ...s.layersOn, [id]: e.target.checked } });
+        const ds = e.target?.dataset || {};
+        if (ds.layerCb) {
+          const s = ctx.getState();
+          ctx.setState({ layersOn: { ...s.layersOn, [ds.layerCb]: e.target.checked } });
+        } else if (ds.extraCb) {
+          ctx.setState({ [ds.extraCb]: e.target.checked });
+        }
       });
       box.addEventListener('input', (e) => {
         const id = e.target?.dataset?.layerOp;
@@ -136,10 +202,24 @@ export function initMap(ctx) {
   });
   const layerCtl = new LayerControl().addTo(map);
   const layerBox = layerCtl.getContainer();
+  const layerCount = layerBox.querySelector('.map-ctl-count');
+  function setCollapsed(c) {
+    layerBox.classList.toggle('is-collapsed', c);
+    layerBox.querySelector('[data-act="toggle-layers"]')?.setAttribute('aria-expanded', String(!c));
+  }
+  // Narrower maps (e.g. 1280 px laptops, map ~960 px): start collapsed so the control does not cover the route or H.
+  if (el.clientWidth && el.clientWidth < 1000) setCollapsed(true);
+  // Keep the open control inside the map (it scrolls when taller).
+  function fitLayerBox() {
+    const h = el.clientHeight;
+    if (h) layerBox.querySelector('.map-layers-body').style.maxHeight = `${Math.max(120, h - 90)}px`;
+  }
 
   function renderLayers(layersOn) {
+    let n = 0;
     for (const layer of data.layers) {
       const on = !!layersOn?.[layer.id];
+      if (on) n++;
       const ov = overlays[layer.id];
       if (on && !map.hasLayer(ov)) ov.addTo(map);
       if (!on && map.hasLayer(ov)) map.removeLayer(ov);
@@ -147,6 +227,201 @@ export function initMap(ctx) {
       if (cb) cb.checked = on;
       layerBox.querySelector(`[data-layer="${CSS.escape(layer.id)}"]`)?.classList.toggle('is-on', on);
     }
+    layerCount.textContent = n ? `${n} on` : '';
+  }
+
+  function renderExtras(s) {
+    for (const [key, extra] of [['roverPathOn', 'rover'], ['depotOn', 'depot']]) {
+      const on = !!s[key];
+      const cb = layerBox.querySelector(`[data-extra-cb="${key}"]`);
+      if (cb) cb.checked = on;
+      layerBox.querySelector(`[data-extra="${extra}"]`)?.classList.toggle('is-on', on);
+    }
+    renderRoverPath(!!s.roverPathOn);
+    renderTubes(s.depotOn !== false);
+  }
+
+  // ---------------------------------------------------------------- Perseverance traverse (real)
+  mkPane('map-rover-path', 320);
+  const roverPathRenderer = L.svg({ pane: 'map-rover-path', padding: 0.5 });
+  const roverPathLayer = L.layerGroup();
+  if (roverPath) {
+    const color = C.roverPath;
+    const ranges = [
+      ['A', data.photosByStop?.A?.parkedSols, data.stopsById?.A?.name || 'Stop A'],
+      ['B', data.photosByStop?.B?.parkedSols, data.stopsById?.B?.name || 'Depot'],
+    ].map(([id, sols, name]) => (Array.isArray(sols) && sols.length ? { id, name, lo: Math.min(...sols), hi: Math.max(...sols) } : null))
+      .filter(Boolean);
+    const inRange = (sol) => ranges.find((r) => sol >= r.lo && sol <= r.hi) || null;
+    for (const seg of roverPath.segments) {
+      const r = inRange(seg.sol);
+      L.polyline(pathToLatLngs(seg.px), {
+        renderer: roverPathRenderer, pane: 'map-rover-path', color, weight: r ? 2.4 : 1.6, opacity: r ? 0.95 : 0.75,
+        lineJoin: 'round', lineCap: 'round', className: 'map-rover-path',
+      }).bindTooltip(`Sol ${esc(seg.sol)}${r ? ` · rover parked near ${esc(r.name)} (sols ${r.lo}–${r.hi})` : ''}`, {
+        sticky: true, className: 'map-tip', direction: 'top', offset: [0, -6],
+      }).addTo(roverPathLayer);
+    }
+    // Sol labels: one per ~50 sols, plus the sol ranges at stop A and at the depot. Skip labels that crowd each other.
+    const labels = [];
+    for (const r of ranges) {
+      const seg = roverPath.segments.find((g) => g.sol >= r.lo && g.sol <= r.hi);
+      if (seg) labels.push({ px: seg.px[0], text: `Sols ${r.lo}–${r.hi} (${r.id})`, key: true });
+    }
+    let nextMark = Math.ceil((roverPath.solRange?.[0] ?? 0) / 50) * 50;
+    for (const seg of roverPath.segments) {
+      if (seg.sol >= nextMark) {
+        labels.push({ px: seg.px[0], text: `Sol ${seg.sol}`, key: false });
+        nextMark = Math.floor(seg.sol / 50) * 50 + 50;
+      }
+    }
+    // Key labels sit left of their point (stop names extend to the right); plain sol labels avoid the stops.
+    const stopPx = data.stops.map((st) => st.px).filter(Array.isArray);
+    const placed = [];
+    for (const lb of labels) {
+      if (placed.some((p) => Math.hypot(p[0] - lb.px[0], p[1] - lb.px[1]) < 45)) continue;
+      if (!lb.key && stopPx.some((p) => Math.hypot(p[0] - lb.px[0], p[1] - lb.px[1]) < 60)) continue;
+      placed.push(lb.px);
+      L.marker(pxToLatLng(lb.px), {
+        pane: 'map-rover-path', interactive: false, keyboard: false,
+        icon: L.divIcon({ className: 'map-sol-wrap', iconSize: [0, 0], html: `<span class="map-sol${lb.key ? ' is-key is-left' : ''}">${esc(lb.text)}</span>` }),
+      }).addTo(roverPathLayer);
+    }
+  }
+  function renderRoverPath(on) {
+    if (!roverPath) return;
+    if (on && !map.hasLayer(roverPathLayer)) roverPathLayer.addTo(map);
+    if (!on && map.hasLayer(roverPathLayer)) map.removeLayer(roverPathLayer);
+  }
+
+  // ---------------------------------------------------------------- depot sample tubes (real)
+  mkPane('map-tubes', 620);
+  const tubesRenderer = L.svg({ pane: 'map-tubes', padding: 0.5 });
+  const TUBE_ZOOM = 1;                          // below this, one "10 tubes" marker (they sit within ~35 m)
+  const tubeLayer = L.layerGroup();
+  const tubeCluster = L.layerGroup();
+  if (tubes.length) {
+    for (const t of tubes) {
+      const ll = Number.isFinite(t.lon) && Number.isFinite(t.lat) ? [t.lon, t.lat] : pxToLonLat(t.px, data.geo);
+      const cored = [
+        Number.isFinite(t.coredSol) ? `cored on sol ${esc(t.coredSol)}` : '',
+        t.coredLonLat ? `at ${esc(fmtLonLat(t.coredLonLat, 4))}` : '',
+      ].filter(Boolean).join(' ');
+      const img = t.closeup
+        ? `<a class="map-tube-img" href="${esc(t.closeup)}" target="_blank" rel="noopener"><img loading="lazy" alt="Close-up of tube ${esc(t.name)}" src="${esc(t.closeup)}"></a>`
+        : '';
+      const html = `<div class="map-tube-pop">
+          <div class="map-tube-title">${esc(t.name)} <span class="map-tube-id">${esc(t.sampleId)}</span></div>
+          <div class="map-tube-meta">Dropped on sol ${esc(t.dropSol ?? '?')}${cored ? ` · ${cored}` : ''}</div>
+          ${ll ? `<div class="map-tube-meta">${esc(fmtLonLat(ll, 6))}</div>` : ''}
+          ${img}
+          ${t.closeupDem ? `<div class="map-tube-meta"><a href="${esc(t.closeupDem)}" target="_blank" rel="noopener">Close-up height map (DEM)</a></div>` : ''}
+          ${t.credit ? `<div class="map-tube-credit">Image: ${esc(t.credit)}</div>` : ''}
+        </div>`;
+      const marker = L.circleMarker(pxToLatLng(t.px), {
+        renderer: tubesRenderer, pane: 'map-tubes', radius: 4.5, color: '#160d08', weight: 1.5,
+        fillColor: C.tube, fillOpacity: 1, className: 'map-tube',
+      }).bindTooltip(`${esc(t.name)} · sol ${esc(t.dropSol ?? '?')}`, { className: 'map-tip', direction: 'top', offset: [0, -5] });
+      // Popup content is one DOM element per tube, built on first open (so the close-up only loads
+      // then). Leaflet's update() re-appends the same element, so the broken-image fallback sticks.
+      let el = null;
+      const relayout = () => { const pp = marker.getPopup(); if (pp && pp.isOpen()) pp.update(); };
+      marker.bindPopup(() => {
+        if (el) return el;
+        el = document.createElement('div');
+        el.innerHTML = html;
+        el = el.firstElementChild;
+        const im = el.querySelector('.map-tube-img img');
+        if (im) {
+          im.addEventListener('error', () => {
+            const a = im.parentElement;
+            im.remove();
+            a.classList.add('is-broken');
+            a.textContent = 'Open the close-up image (could not load it here)';
+            relayout();
+          }, { once: true });
+          im.addEventListener('load', relayout, { once: true });
+        }
+        return el;
+      }, { className: 'map-popup', maxWidth: 260, minWidth: 220 }).addTo(tubeLayer);
+    }
+    const c = data.depot?.center?.px || tubes[0].px;
+    L.marker(pxToLatLng(c), {
+      pane: 'map-tubes', keyboard: true, title: `${tubes.length} depot sample tubes: zoom in`,
+      icon: L.divIcon({ className: 'map-tubes-wrap', iconSize: [0, 0], html: `<span class="map-tubes-badge">${esc(tubes.length)} tubes</span>` }),
+    }).on('click', (e) => { L.DomEvent.stopPropagation(e); map.setView(pxToLatLng(c), TUBE_ZOOM + 1); })
+      .addTo(tubeCluster);
+  }
+  let tubesShown = null;
+  function renderTubes(on) {
+    if (!tubes.length) return;
+    const detail = map.getZoom() >= TUBE_ZOOM;
+    const key = on ? (detail ? 'detail' : 'cluster') : 'off';
+    if (key === tubesShown) return;
+    tubesShown = key;
+    if (key === 'detail') tubeLayer.addTo(map); else map.removeLayer(tubeLayer);
+    if (key === 'cluster') tubeCluster.addTo(map); else map.removeLayer(tubeCluster);
+  }
+  map.on('zoomend', () => renderTubes(ctx.getState().depotOn !== false));
+
+  // ---------------------------------------------------------------- imagery credit
+  const ortho = (data.provenance?.sources || []).find((s) => /orthomosaic/i.test(s.name || ''));
+  const cm = data.layersMeta?.contextMap;
+  const creditBits = [
+    ortho ? `Basemap: ${esc(ortho.name)} · ${esc(ortho.credit)}` : '',
+    cm?.source ? `Context: ${esc(cm.source)}${cm.layers?.length ? ` (${esc(cm.layers.join('; '))})` : ''}` : '',
+  ].filter(Boolean);
+  if (creditBits.length) {
+    const CreditControl = L.Control.extend({
+      options: { position: 'bottomright' },
+      onAdd() {
+        const box = L.DomUtil.create('div', 'map-credit');
+        box.innerHTML = creditBits.join('<br>');
+        return box;
+      },
+    });
+    new CreditControl().addTo(map);
+  }
+
+  // ---------------------------------------------------------------- cursor lon/lat readout
+  if (data.geo) {
+    const ReadoutControl = L.Control.extend({
+      options: { position: 'bottomright' },
+      onAdd() {
+        const box = L.DomUtil.create('div', 'map-ctl map-readout');
+        box.innerHTML = `<div class="map-readout-ll">Move the cursor over the map</div>
+          <div class="map-readout-sub"><span class="map-readout-px"></span><span class="map-readout-home"></span></div>
+          <div class="map-readout-note" title="${esc(data.geo.method || 'linear interpolation between the bounds.json corners')}">approx. (linear between corners)${data.geo.fake ? ' · FAKE coordinates' : ''}</div>`;
+        return box;
+      },
+    });
+    const ro = new ReadoutControl().addTo(map).getContainer();
+    const roLL = ro.querySelector('.map-readout-ll');
+    const roPx = ro.querySelector('.map-readout-px');
+    const roHome = ro.querySelector('.map-readout-home');
+    let raf = 0, lastLL = null;
+    const paint = () => {
+      raf = 0;
+      if (!lastLL) return;
+      const px = latLngToPx(lastLL);
+      if (px[0] < 0 || px[1] < 0 || px[0] > W || px[1] > H) {
+        roLL.textContent = 'Outside the map';
+        roPx.textContent = ''; roHome.textContent = '';
+        return;
+      }
+      roLL.textContent = fmtLonLat(pxToLonLat(px, data.geo), 5);
+      roPx.textContent = `px ${Math.round(px[0])}, ${Math.round(px[1])}`;
+      const th = ctx.timeHomeAt?.(px);
+      roHome.textContent = th == null ? ' · no way home' : ` · ${fmtMinLong(th)} home`;
+      ro.classList.toggle('is-unreachable', th == null);
+    };
+    map.on('mousemove', (e) => { lastLL = e.latlng; if (!raf) raf = requestAnimationFrame(paint); });
+    map.on('mouseout', () => {
+      lastLL = null;
+      roLL.textContent = 'Move the cursor over the map';
+      roPx.textContent = ''; roHome.textContent = '';
+      ro.classList.remove('is-unreachable');
+    });
   }
 
   // ---------------------------------------------------------------- scale bar + north note
@@ -155,7 +430,9 @@ export function initMap(ctx) {
     onAdd() {
       const box = L.DomUtil.create('div', 'map-ctl map-scale');
       box.innerHTML = `<div class="map-scale-bar"><span class="map-scale-label"></span></div>
-        <div class="map-scale-note">1 px = ${esc(pixelM)} m · map up = north <em class="map-assume">(assumption)</em></div>`;
+        <div class="map-scale-note">1 px = ${esc(pixelM)} m · map up = north ${data.geo && !data.geo.fake && data.geo.crs
+          ? `<em class="map-crs" title="${esc(data.geo.crs)}">(equirectangular grid)</em>`
+          : '<em class="map-assume">(assumption)</em>'}</div>`;
       return box;
     },
   });
@@ -436,6 +713,7 @@ export function initMap(ctx) {
   // ---------------------------------------------------------------- wiring
   function renderAll(s) {
     renderLayers(s.layersOn);
+    renderExtras(s);
     renderVariants(s);
     renderStops(s);
     renderSim(s);
@@ -448,6 +726,7 @@ export function initMap(ctx) {
   let prevStatusIdle = null, prevKind = null;
   ctx.subscribe((s, prev, changed) => {
     if (changed.has('layersOn')) renderLayers(s.layersOn);
+    if (changed.has('roverPathOn') || changed.has('depotOn')) renderExtras(s);
     if (changed.has('mode') && s.mode === 'planner') setTimeout(() => map.invalidateSize(), 0);
     if (changed.has('sim') || changed.has('plannedVariantId') || changed.has('selectedStopId')) {
       const idle = !s.sim || s.sim.status === 'idle';
@@ -476,7 +755,8 @@ export function initMap(ctx) {
   map.on('click', () => { if (ctx.getState().selectedStopId) ctx.setState({ selectedStopId: null }); });
 
   // Container size changes (panel resize, window resize) keep the map correct.
-  if (typeof ResizeObserver === 'function') new ResizeObserver(() => map.invalidateSize()).observe(el);
+  fitLayerBox();
+  if (typeof ResizeObserver === 'function') new ResizeObserver(() => { map.invalidateSize(); fitLayerBox(); }).observe(el);
 
   return { map, latLngToPx };
 }

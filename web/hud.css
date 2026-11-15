@@ -22,7 +22,7 @@
 #hud .hud-label { font-size: 17px; fill: var(--hud-dim); font-weight: 700; letter-spacing: 0.14em; }
 #hud .hud-next { font-size: 34px; font-weight: 700; }
 #hud .hud-big { font-size: 84px; font-weight: 800; }
-#hud .hud-huge { font-size: 96px; font-weight: 800; }
+#hud .hud-huge { font-size: 80px; font-weight: 800; }
 #hud .hud-unit { font-size: 24px; fill: var(--hud-dim); font-weight: 400; }
 #hud .hud-sub { font-size: 19px; }
 #hud .hud-tiny { font-size: 15px; fill: var(--hud-dim); }
@@ -49,6 +49,23 @@
 #hud .hud-banner[data-level="danger"] .hud-banner-bg { animation: hud-pulse 1.1s ease-in-out infinite; }
 #hud .hud-banner-title { font-size: 25px; font-weight: 800; fill: #fff; letter-spacing: 0.06em; }
 #hud .hud-banner-text { font-size: 18px; fill: #f3e9e1; }
+
+/* ---------- env chips (top right) ---------- */
+#hud .hud-env-chip rect { fill: color-mix(in srgb, var(--hud-fg) 8%, #000); stroke: var(--hud-line); stroke-width: 2; }
+#hud .hud-env-chip text { font-size: 16px; font-weight: 800; letter-spacing: 0.06em; }
+#hud .hud-env-ok text { fill: var(--hud-fg); }
+#hud .hud-env-info text { fill: var(--hud-dim); }
+#hud .hud-env-warn rect { stroke: var(--warn); fill: color-mix(in srgb, var(--warn) 14%, #000); }
+#hud .hud-env-warn text { fill: var(--warn); }
+#hud .hud-env-danger rect { stroke: var(--danger); fill: color-mix(in srgb, var(--danger) 26%, #000); animation: hud-pulse 1.1s ease-in-out infinite; }
+#hud .hud-env-danger text { fill: #fff; }
+
+/* ---------- budget label / DEMO tag (under the air bar's right end) ---------- */
+#hud .hud-budget-t { font-size: 14px; fill: var(--hud-dim); }
+#hud .hud-budget-bg { fill: none; stroke: none; }
+#hud .hud-budget-demo .hud-budget-bg { fill: var(--demo-bg); stroke: var(--demo); stroke-width: 2; stroke-dasharray: 5 3; }
+#hud .hud-budget-demo .hud-budget-t { fill: var(--demo); font-weight: 800; letter-spacing: 0.06em; }
+#hud .hud-foot-demo { fill: var(--demo); font-weight: 700; }
 
 /* ---------- compass / arrow ---------- */
 #hud .hud-ring { fill: none; stroke: var(--hud-line); stroke-width: 3; }

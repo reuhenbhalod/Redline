@@ -9,3 +9,4 @@ examples/out/
 work/
 *.pyc
 .pytest_cache/
+.ui-shots/

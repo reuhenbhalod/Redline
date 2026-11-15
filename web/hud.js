@@ -6,6 +6,7 @@
 import {
   clamp, distM, cumulativeDistM, distanceAt,
   bearingDeg, cardinal, fmtMin, fmtMinLong, fmtDistM,
+  effectiveBudget, DEMO_BUDGET_NOTE,
 } from './util.js';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -16,6 +17,39 @@ const ARROW = { cx: 320, cy: 420, r: 185 };
 const MINI = { x: 1090, y: 130, w: 470, h: 470 };
 const STRIP = { x: 90, y: 772, w: 1420 };
 const AIRBAR = { x: 640, y: 568, w: 420, h: 26 };
+const ENV = { right: VB_W - 72, y: 56, h: 32, gap: 8, minLeft: 1075 }; // env chips, top right
+const ENV_HOUR_LTST = 13; // HUD temperature: MEDA hourly mean at this local true solar hour (a fixed pick)
+
+/** Glanceable env chips from the sim env (or data.env when idle). Pure: exported for tests/debug. */
+export function hudEnvChips(simEnv, dataEnv, hourLtst = ENV_HOUR_LTST) {
+  const de = dataEnv || {};
+  const se = simEnv || {};
+  const chips = [];
+  const w = de.weather;
+  const hr = w?.hourly?.find((h) => h.hour === hourLtst);
+  const r1 = (v) => Math.round(v);
+  if (hr && Number.isFinite(hr.airTempC)) {
+    chips.push({ id: 'temp', level: 'ok', text: `${r1(hr.airTempC)}°C ${hourLtst}h`,
+      title: `Air temperature ${hr.airTempC} °C: MEDA hourly mean at ${hourLtst}:00 LTST (fixed pick)` +
+        `${w.airTempC ? `; range ${r1(w.airTempC.min)} to ${r1(w.airTempC.max)} °C` : ''}${w.timeFrame ? ` · ${w.timeFrame}` : ''}${w.source ? ` · ${w.source}` : ''}` });
+  } else if (w?.airTempC && Number.isFinite(w.airTempC.min)) {
+    chips.push({ id: 'temp', level: 'ok', text: `${r1(w.airTempC.min)}…${r1(w.airTempC.max)}°C`,
+      title: `Air temperature range (MEDA)${w.timeFrame ? ` · ${w.timeFrame}` : ''}` });
+  }
+  const dust = String(se.dust ?? de.dust ?? 'unknown');
+  const tau = Number.isFinite(se.dustTau) ? se.dustTau : de.dustTau?.estimate;
+  const dt = de.dustTau;
+  chips.push({ id: 'dust', level: dust === 'high' ? 'danger' : dust === 'moderate' ? 'warn' : dust === 'unknown' ? 'info' : 'ok',
+    text: `DUST ${dust.toUpperCase()}${Number.isFinite(tau) ? ` τ${tau.toFixed(2)}` : ''}`,
+    title: dt ? `Dust optical depth τ ${dt.estimate}${dt.range ? ` (range ${dt.range[0]}–${dt.range[1]})` : ''}${dt.isEstimate ? ', estimate' : ''}${dt.source ? ` · ${dt.source}` : ''}` : 'Dust level' });
+  const storm = !!se.stormActive;
+  const solar = storm || !!(se.solarAlert ?? de.solar_alert);
+  const sw = de.spaceWeather;
+  chips.push({ id: 'solar', level: solar ? 'danger' : 'ok',
+    text: storm ? 'STORM' : solar ? 'SOLAR ALERT' : 'NO SOLAR ALERT',
+    title: `Solar alert from ${sw?.source || 'space weather feed'}${sw?.cmeArrivals30d ? ` · ${sw.cmeArrivals30d.length} Mars CME arrivals in the last 30 days` : ''}${storm ? ' · STORM demo on' : ''}` });
+  return chips;
+}
 
 const LEVEL_COLOR = { ok: 'var(--ok)', warn: 'var(--warn)', danger: 'var(--danger)', info: 'var(--info)' };
 
@@ -114,11 +148,14 @@ export function initHud(ctx) {
   const tClock = svg('text', { class: 'hud-t hud-clock', x: 70, y: 92 }, gTop, 'T+0:00');
   const tStatus = svg('text', { class: 'hud-t hud-status', x: 70, y: 124 }, gTop, '');
   const tPace = svg('text', { class: 'hud-t hud-tag hud-tag-warn', x: 70, y: 154 }, gTop, 'SLOW PACE');
-  // Top-right: FAKE tag
+  // FAKE tag (top-left, under the pace tag; the top right holds the env chips)
   const gFake = svg('g', { class: 'hud-fake' }, s);
-  svg('rect', { x: VB_W - 226, y: 58, width: 156, height: 34, rx: 6 }, gFake);
-  svg('text', { class: 'hud-t', x: VB_W - 148, y: 82, 'text-anchor': 'middle' }, gFake, 'FAKE DATA');
+  svg('rect', { x: 70, y: 166, width: 132, height: 30, rx: 6 }, gFake);
+  svg('text', { class: 'hud-t', x: 136, y: 187, 'text-anchor': 'middle' }, gFake, 'FAKE DATA');
   show(gFake, !!data.fake);
+  // Env chips (top right): temperature · dust · solar. Laid out right to left in render().
+  const gEnv = svg('g', { class: 'hud-env' }, s);
+  const envChipEls = [];
 
   // Alert banner (top center)
   const gBanner = svg('g', { class: 'hud-banner' }, s);
@@ -169,7 +206,7 @@ export function initHud(ctx) {
   const tEta = svg('text', { class: 'hud-t hud-sub', x: CX, y: 392 }, gMid, '');
 
   svg('text', { class: 'hud-t hud-label', x: CX, y: 452 }, gMid, 'AIR LEFT');
-  svg('text', { class: 'hud-t hud-label', x: CX + 230, y: 452 }, gMid, 'TIME TO WALK HOME');
+  svg('text', { class: 'hud-t hud-label', x: AIRBAR.x + AIRBAR.w, y: 452, 'text-anchor': 'end' }, gMid, 'TIME TO WALK HOME');
   // Air bar (budget scale): fill = air left, marker = time home + reserve
   const gBar = svg('g', { class: 'hud-airbar' }, gMid);
   svg('rect', { class: 'hud-bar-bg', x: AIRBAR.x, y: AIRBAR.y, width: AIRBAR.w, height: AIRBAR.h, rx: 5 }, gBar);
@@ -177,15 +214,19 @@ export function initHud(ctx) {
   const barFill = svg('rect', { class: 'hud-bar-fill', x: AIRBAR.x, y: AIRBAR.y + 4, width: 0, height: AIRBAR.h - 8, rx: 3 }, gBar);
   const barNeed = svg('line', { class: 'hud-bar-need', x1: AIRBAR.x, x2: AIRBAR.x, y1: AIRBAR.y - 8, y2: AIRBAR.y + AIRBAR.h + 8 }, gBar);
   const tBarNeed = svg('text', { class: 'hud-t hud-tiny', x: AIRBAR.x, y: AIRBAR.y + AIRBAR.h + 26, 'text-anchor': 'middle' }, gBar, 'home+reserve');
+  // Budget scale label under the bar's right end (= the budget). DEMO tag while the demo budget is on.
+  const gBudget = svg('g', { class: 'hud-budget' }, gBar);
+  const budgetRect = svg('rect', { class: 'hud-budget-bg', x: 0, y: AIRBAR.y + AIRBAR.h + 9, width: 0, height: 24, rx: 5 }, gBudget);
+  const budgetTitle = svg('title', {}, gBudget, '');
+  const tBudget = svg('text', { class: 'hud-t hud-budget-t', x: AIRBAR.x + AIRBAR.w, y: AIRBAR.y + AIRBAR.h + 27, 'text-anchor': 'end' }, gBudget, '');
   const tAirT = svg('text', { class: 'hud-t', x: CX, y: 545 }, gMid);
   const tAir = svg('tspan', { class: 'hud-huge' }, tAirT, '');
   svg('tspan', { class: 'hud-unit', dx: 8 }, tAirT, 'min');
-  const tHomeT = svg('text', { class: 'hud-t', x: CX + 230, y: 545 }, gMid);
+  const tHomeT = svg('text', { class: 'hud-t', x: AIRBAR.x + AIRBAR.w, y: 545, 'text-anchor': 'end' }, gMid);
   const tHome = svg('tspan', { class: 'hud-huge' }, tHomeT, '');
   svg('tspan', { class: 'hud-unit', dx: 8 }, tHomeT, 'min');
   const tMargin = svg('text', { class: 'hud-t hud-sub', x: CX, y: 648 }, gMid, '');
   const tBurn = svg('text', { class: 'hud-t hud-tiny', x: CX, y: 674 }, gMid, '');
-  const tEnv = svg('text', { class: 'hud-t hud-sub', x: CX, y: 704 }, gMid, '');
 
   // Mini-map (right)
   const gMiniFrame = svg('g', { class: 'hud-mini' }, s);
@@ -220,7 +261,7 @@ export function initHud(ctx) {
   });
   const tMiniTitle = svg('text', { class: 'hud-t hud-label', x: MINI.x + 18, y: MINI.y - 16 }, s, 'MAP · OVERVIEW');
   const tMiniHint = svg('text', { class: 'hud-t hud-tiny', x: MINI.x + MINI.w - 14, y: MINI.y - 16, 'text-anchor': 'end' }, s, 'click: zoom');
-  const tMiniNorth = svg('text', { class: 'hud-t hud-tiny', x: MINI.x + 16, y: MINI.y + MINI.h - 14 }, s, '▲ N (map up, assumption)');
+  const tMiniNorth = svg('text', { class: 'hud-t hud-tiny', x: MINI.x + 16, y: MINI.y + MINI.h - 14 }, s, data.fake ? '▲ N (map up, assumption)' : '▲ N (map up = north)');
   const tCrewUnc = svg('text', { class: 'hud-t hud-sub', x: MINI.x, y: MINI.y + MINI.h + 40 }, s, '');
   const tRover = svg('text', { class: 'hud-t hud-tiny', x: MINI.x, y: MINI.y + MINI.h + 70 }, s, '');
   // Legend under mini map
@@ -247,6 +288,7 @@ export function initHud(ctx) {
   svg('path', { d: 'M0 -14 L10 0 L0 14 L-10 0 Z' }, stripMe);
 
   // Footnotes
+  const tFootBudget = svg('text', { class: 'hud-t hud-foot', x: 70, y: VB_H - 46 }, s, '');
   const tFoot = svg('text', { class: 'hud-t hud-foot', x: 70, y: VB_H - 46 }, s, '');
 
   // HTML replan card (needs a real button)
@@ -330,14 +372,17 @@ export function initHud(ctx) {
         { id: 'EV2', px: startPx, truePx: startPx, uncertaintyM: config.posErrM },
       ],
       rover: { px: startPx, linkOk: !st.faults?.linkLost, aheadM: 0 },
-      air: {
-        budgetMin: config.budgetMin, reserveMin: config.reserveMin, usedMin: 0, leftMin: config.budgetMin,
-        burnFactor: st.faults?.highAir ? config.highAirBurnFactor : 1, timeHomeMin: th, timeHomeSource: 'grid',
-        marginMin: config.budgetMin - th - config.reserveMin, level: 'ok', turnaround: false,
-      },
+      air: (() => {
+        const eb = effectiveBudget(st, config);
+        return {
+          budgetMin: eb.budgetMin, reserveMin: eb.reserveMin, budgetDemo: eb.demo, usedMin: 0, leftMin: eb.budgetMin,
+          burnFactor: st.faults?.highAir ? config.highAirBurnFactor : 1, timeHomeMin: th, timeHomeSource: 'grid',
+          marginMin: eb.budgetMin - th - eb.reserveMin, level: 'ok', turnaround: false,
+        };
+      })(),
       schedule: { behindMin: 0, plannedReturnT: v.est_min, projectedReturnT: v.est_min },
       env: {
-        dust: data.env.dust, solarAlert: !!data.env.solar_alert || !!st.faults?.storm, stormActive: !!st.faults?.storm,
+        dust: data.env.dust, dustTau: data.env.dustTau?.estimate ?? null, solarAlert: !!data.env.solar_alert || !!st.faults?.storm, stormActive: !!st.faults?.storm,
         level: st.faults?.storm ? 'danger' : (data.env.solar_alert || data.env.dust === 'high') ? 'warn' : 'ok',
         text: `Dust ${data.env.dust} · ${data.env.solar_alert ? 'SOLAR ALERT' : 'no solar alert'}`,
       },
@@ -372,6 +417,47 @@ export function initHud(ctx) {
   // Render (attribute updates only)
   // ---------------------------------------------------------------------------
   const lastKey = { active: null, proposed: null, home: null, trailLen: -1, trailRef: null, stripId: null, miniScale: null, cardId: undefined, dropped: null, visited: null };
+
+  function renderEnv(simEnv) {
+    const chips = hudEnvChips(simEnv, data.env);
+    const key = chips.map((c) => `${c.id}|${c.level}|${c.text}|${c.title}`).join('#');
+    if (gEnv.__key === key) return;
+    gEnv.__key = key;
+    while (envChipEls.length < chips.length) {
+      const g = svg('g', { class: 'hud-env-chip' }, gEnv);
+      const r = svg('rect', { y: ENV.y, height: ENV.h, rx: 8 }, g);
+      const ti = svg('title', {}, g, '');
+      const t = svg('text', { class: 'hud-t', y: ENV.y + ENV.h / 2 + 6, 'text-anchor': 'middle' }, g, '');
+      envChipEls.push({ g, r, t, ti });
+    }
+    // pass 1: set texts and measure; if the chips do not fit, squeeze the glyphs (textLength) evenly
+    const widths = envChipEls.map((e, i) => {
+      const c = chips[chips.length - 1 - i]; // right to left
+      show(e.g, !!c);
+      if (!c) return 0;
+      setAttr(e.g, 'class', `hud-env-chip hud-env-${c.level}`);
+      e.t.removeAttribute('textLength'); e.t.removeAttribute('lengthAdjust');
+      setText(e.t, c.text);
+      setText(e.ti, c.title);
+      try { return e.t.getComputedTextLength(); } catch { return c.text.length * 11; }
+    });
+    const n = chips.length;
+    const sumW = widths.reduce((a, b) => a + b, 0);
+    const avail = ENV.right - ENV.minLeft - n * 24 - Math.max(0, n - 1) * ENV.gap;
+    const k = sumW > avail && sumW > 0 ? Math.max(0.6, avail / sumW) : 1;
+    let x = ENV.right;
+    envChipEls.forEach((e, i) => {
+      const c = chips[chips.length - 1 - i];
+      if (!c) return;
+      const w = widths[i] * k;
+      if (k < 1) { setAttr(e.t, 'textLength', w.toFixed(1)); setAttr(e.t, 'lengthAdjust', 'spacingAndGlyphs'); }
+      const cw = w + 24;
+      const left = Math.max(ENV.minLeft, x - cw);
+      setAttr(e.r, 'x', left.toFixed(1)); setAttr(e.r, 'width', (x - left).toFixed(1));
+      setAttr(e.t, 'x', ((left + x) / 2).toFixed(1));
+      x = left - ENV.gap;
+    });
+  }
 
   function render() {
     const st = ctx.getState();
@@ -459,8 +545,11 @@ export function initHud(ctx) {
     setFit(tEta, etaText, 430);
 
     // Air
-    const budget = air.budgetMin ?? config.budgetMin;
-    const reserve = air.reserveMin ?? config.reserveMin;
+    const eb = effectiveBudget(st, config);
+    const budget = air.budgetMin ?? eb.budgetMin;
+    const reserve = air.reserveMin ?? eb.reserveMin;
+    const realBudget = eb.realBudgetMin;
+    const demo = air.budgetDemo != null ? !!air.budgetDemo : budget !== realBudget;
     const left = air.leftMin ?? budget;
     const th = air.timeHomeMin;
     const lvl = air.level || 'ok';
@@ -475,16 +564,27 @@ export function initHud(ctx) {
     const nx = AIRBAR.x + scale(need);
     setAttr(barReserve, 'width', scale(need).toFixed(1));
     setAttr(barNeed, 'x1', nx.toFixed(1)); setAttr(barNeed, 'x2', nx.toFixed(1));
-    setAttr(tBarNeed, 'x', clamp(nx, AIRBAR.x + 50, AIRBAR.x + AIRBAR.w - 50).toFixed(1));
+    // budget label at the bar's right end
+    setText(tBudget, demo ? `DEMO BUDGET ${budget}` : `budget ${budget}`);
+    setText(budgetTitle, demo ? `Budget ${budget} min: ${DEMO_BUDGET_NOTE} (real ${realBudget} min)` : `Suit budget ${budget} min, reserve ${reserve} min`);
+    setAttr(gBudget, 'class', `hud-budget${demo ? ' hud-budget-demo' : ''}`);
+    let bw = 0;
+    try { bw = tBudget.getComputedTextLength(); } catch { /* not rendered */ }
+    const bPad = demo ? 9 : 0;
+    const bLeft = AIRBAR.x + AIRBAR.w - bw - bPad;
+    setAttr(tBudget, 'x', (AIRBAR.x + AIRBAR.w - bPad).toFixed(1));
+    setAttr(budgetRect, 'x', bLeft.toFixed(1));
+    setAttr(budgetRect, 'width', demo ? (bw + 2 * bPad).toFixed(1) : '0');
+    // "home+reserve" label follows the marker but stays clear of the budget label
+    const needMaxX = Math.min(AIRBAR.x + AIRBAR.w - 50, bLeft - 62);
+    setAttr(tBarNeed, 'x', clamp(nx, AIRBAR.x + 50, Math.max(AIRBAR.x + 50, needMaxX)).toFixed(1));
     const margin = air.marginMin ?? (left - need);
     setFit(tMargin, air.turnaround ? `TURN AROUND · margin ${Math.round(margin)} min` : `Margin ${Number.isFinite(margin) ? `${margin >= 0 ? '+' : ''}${Math.round(margin)} min` : '—'} · ${reserve} reserve kept`, 430);
     setAttr(tMargin, 'class', `hud-t hud-sub hud-lv-${lvl}`);
     const src = air.timeHomeSource === 'grid' ? 'grid' : air.timeHomeSource === 'route' ? 'route' : 'n/a';
     setText(tBurn, `air burn ${(air.burnFactor ?? 1).toFixed(1)}×${(air.burnFactor ?? 1) > 1 ? ' HIGH' : ''} · home via ${src}`);
     setAttr(tBurn, 'class', `hud-t hud-tiny ${(air.burnFactor ?? 1) > 1 ? 'hud-lv-warn' : ''}`);
-    const envLvl = sim.env?.level || 'ok';
-    setFit(tEnv, sim.env?.text || `Dust ${data.env.dust}`, 430);
-    setAttr(tEnv, 'class', `hud-t hud-sub hud-lv-${envLvl}`);
+    renderEnv(sim.env);
 
     // Mini map geometry (only when changed)
     const act = sim.active;
@@ -596,7 +696,16 @@ export function initHud(ctx) {
     }
 
     // Footnotes (assumptions)
-    setFit(tFoot, `Assumptions: suit budget ${budget} min · reserve ${reserve} min · walk ${config.vFlatKmh} km/h on flat · slope soft ${config.slopeSoftDeg}° / no-go ${config.slopeHardDeg}° · turn-around at home+reserve+${config.turnaroundMarginMin} min · map up = north${data.fake ? ' · FAKE DATA' : ''}`, 1440);
+    const footBudget = demo
+      ? `Budget ${budget} min: ${DEMO_BUDGET_NOTE} (real ${realBudget})`
+      : `Budget ${budget} / reserve ${reserve} min`;
+    setText(tFootBudget, footBudget);
+    setAttr(tFootBudget, 'class', `hud-t hud-foot${demo ? ' hud-foot-demo' : ''}`);
+    let fw = 0;
+    try { fw = tFootBudget.getComputedTextLength(); } catch { /* not rendered */ }
+    const fx0 = 70 + fw + 12;
+    setAttr(tFoot, 'x', fx0.toFixed(1));
+    setFit(tFoot, `· ${data.fake ? 'FAKE DATA · ' : ''}${demo ? `reserve ${reserve} min · ` : ''}temp = MEDA at ${ENV_HOUR_LTST}:00 LTST · walk ${config.vFlatKmh} km/h on flat · slope soft ${config.slopeSoftDeg}° / no-go ${config.slopeHardDeg}° · turn-around at home+reserve+${config.turnaroundMarginMin} min · map up = north`, Math.max(200, VB_W - 70 - fx0));
 
     // Replan card
     const p = sim.pendingReplan;
@@ -627,7 +736,7 @@ export function initHud(ctx) {
   // ---------------------------------------------------------------------------
   // Subscriptions
   // ---------------------------------------------------------------------------
-  const WATCH = ['sim', 'mode', 'plannedVariantId', 'faults', 'slowPace'];
+  const WATCH = ['sim', 'mode', 'plannedVariantId', 'faults', 'slowPace', 'demoBudgetMin'];
   ctx.subscribe((st, prev, changed) => {
     if (st.mode !== 'hud') return;
     if (changed.has('mode')) { lastKey.miniScale = null; }

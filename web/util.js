@@ -197,3 +197,101 @@ export function fmtDistM(m) {
 export function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+
+// ---------------------------------------------------------------------------
+// Geography (real data): grid px <-> lon/lat from bounds.json corners.
+// LINEAR (bilinear) interpolation between the four corners. The grid is a local
+// true-scale equirectangular patch 4 km across, so the error of this
+// approximation is far below a pixel. Say "approx." / "linear" in the UI.
+// px here is the pipeline's continuous [x, y] (origin at the top-left image
+// corner, y down): it reproduces site.json lon/lat to ~1e-6 deg.
+// geo = ctx.data.geo = { nw, ne, se, sw: [lon, lat], widthPx, heightPx } or null.
+// ---------------------------------------------------------------------------
+
+/** [x, y] grid px -> [lon, lat] degrees (east-positive lon, planetocentric as in bounds.json). null if no geo. */
+export function pxToLonLat(px, geo) {
+  if (!geo || !px) return null;
+  const u = px[0] / geo.widthPx, v = px[1] / geo.heightPx;
+  const top = [lerp(geo.nw[0], geo.ne[0], u), lerp(geo.nw[1], geo.ne[1], u)];
+  const bot = [lerp(geo.sw[0], geo.se[0], u), lerp(geo.sw[1], geo.se[1], u)];
+  return [lerp(top[0], bot[0], v), lerp(top[1], bot[1], v)];
+}
+
+/** [lon, lat] -> [x, y] grid px (inverse of pxToLonLat; exact for an axis-aligned box, which bounds.json is). */
+export function lonLatToPx(lonlat, geo) {
+  if (!geo || !lonlat) return null;
+  const u = (lonlat[0] - geo.nw[0]) / (geo.ne[0] - geo.nw[0]);
+  const v = (lonlat[1] - geo.nw[1]) / (geo.sw[1] - geo.nw[1]);
+  return [u * geo.widthPx, v * geo.heightPx];
+}
+
+/** [lon, lat] -> "18.45851° N, 77.40609° E" (digits default 5 ≈ 0.6 m on Mars). */
+export function fmtLonLat(lonlat, digits = 5) {
+  if (!lonlat || !lonlat.every(Number.isFinite)) return '—';
+  const [lon, lat] = lonlat;
+  return `${Math.abs(lat).toFixed(digits)}° ${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(digits)}° ${lon >= 0 ? 'E' : 'W'}`;
+}
+
+// ---------------------------------------------------------------------------
+// Suit budget: the real budget (config.budgetMin, from safety_params.json) or the
+// labelled DEMO override (state.demoBudgetMin). Every module that shows or uses a
+// budget calls this instead of reading config.budgetMin directly.
+// ---------------------------------------------------------------------------
+
+export const DEMO_BUDGET_NOTE = 'DEMO SETTING, not the real suit budget';
+
+/**
+ * effectiveBudget(state, config) -> {
+ *   budgetMin, reserveMin, usableMin,     // usable = budget - reserve
+ *   demo: boolean,                        // true when state.demoBudgetMin overrides the real budget
+ *   realBudgetMin,                        // config.budgetMin (always the real one)
+ *   label,                                // "480 min suit budget" | "240 min DEMO budget"
+ *   note,                                 // '' | DEMO_BUDGET_NOTE
+ * }
+ */
+export function effectiveBudget(state, config) {
+  const real = config?.budgetMin ?? 480;
+  const reserveMin = config?.reserveMin ?? 30;
+  const d = state?.demoBudgetMin;
+  const demo = Number.isFinite(d) && d > 0 && d !== real;
+  const budgetMin = demo ? d : real;
+  return {
+    budgetMin, reserveMin, usableMin: budgetMin - reserveMin, demo, realBudgetMin: real,
+    label: demo ? `${budgetMin} min DEMO budget` : `${budgetMin} min suit budget`,
+    note: demo ? DEMO_BUDGET_NOTE : '',
+  };
+}
+
+/** Basis tag for a safety param / assumption: 'primary' | 'secondary' | 'assumption' | 'demo' -> short UI label. */
+export function basisLabel(basis) {
+  return ({ primary: 'PRIMARY', secondary: 'SECONDARY', assumption: 'ASSUMPTION', demo: 'DEMO' })[basis] || 'ASSUMPTION';
+}
+
+// Which safety_params.json keys a free-text routes.json assumption line talks about. The Engine writes
+// these lines as plain text, so the match is by keyword; unmatched lines stay 'assumption'.
+const ASSUMPTION_KEY_RULES = [
+  [/walking speed|km\/h/i, ['walk_speed_flat_kmh']],
+  [/tobler|uphill|slower on slopes/i, ['slope_speed_model']],
+  [/sand/i, ['speed_factor_sand_small', 'speed_factor_sand_large']],
+  [/rocky|blocky|talus/i, ['speed_factor_rocky']],
+  [/slope[^.]*\b20\s*°/i, ['slope_hard_deg']],
+  [/slope[^.]*\b15\s*°/i, ['slope_soft_deg']],
+  [/rough/i, ['rough_hard_m']],
+];
+const BASIS_RANK = { assumption: 0, secondary: 1, primary: 2 };
+
+/**
+ * Basis for a routes.json assumption line, from the safety_params keys it mentions.
+ * -> { basis (weakest of the matched keys, 'assumption' if none), bases: [{ basis, keys[] }] strongest first }
+ */
+export function assumptionBasis(text, params) {
+  const keys = [];
+  for (const [re, ks] of ASSUMPTION_KEY_RULES) {
+    if (re.test(String(text || ''))) ks.forEach((k) => { if (params?.[k]?.basis && !keys.includes(k)) keys.push(k); });
+  }
+  if (!keys.length) return { basis: 'assumption', bases: [{ basis: 'assumption', keys: [] }] };
+  const by = {};
+  keys.forEach((k) => { const b = params[k].basis in BASIS_RANK ? params[k].basis : 'assumption'; (by[b] = by[b] || []).push(k); });
+  const bases = Object.keys(by).sort((a, b) => BASIS_RANK[b] - BASIS_RANK[a]).map((b) => ({ basis: b, keys: by[b] }));
+  return { basis: bases[bases.length - 1].basis, bases };
+}

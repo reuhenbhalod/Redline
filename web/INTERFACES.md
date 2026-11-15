@@ -6,17 +6,27 @@ If you need a field that is missing, compute it locally inside your module.
 
 Serve the repo root (`python3 -m http.server 8000` from the repo) and open `/web/index.html`.
 Data comes from `../data/` by default. Override it with `?data=<path relative to /web/>`. More URL params:
-`?mode=hud` starts in HUD mode, and `?variant=skipA` picks the planned variant.
+`?mode=hud` starts in HUD mode, `?variant=skipA` picks the planned variant, and `?budget=demo` starts with the
+DEMO budget (`?budget=<minutes>` sets any demo value).
+
+**Real data (Nov 14).** `data/` now holds the pipeline's real files. New files are optional for `app.js`, so an old
+fake folder still loads (`?data=<folder>`; the browser logs 404s for the missing new files, which is expected there).
+There is no `env.json` any more: the environment comes from `env_data.json`, the budget from `safety_params.json`.
 
 ## File ownership
 
 | File(s) | Owner | Notes |
 | --- | --- | --- |
-| `index.html`, `style.css`, `app.js`, `util.js`, `INTERFACES.md` | scaffold (frozen) | You may *import* from `util.js`. Never import `app.js`; use the `ctx` you are given. |
+| `index.html`, `style.css`, `app.js`, `util.js`, `INTERFACES.md`, `README.md` | scaffold (frozen) | You may *import* from `util.js`. Never import `app.js`; use the `ctx` you are given. |
 | `map.js`, `map.css` | map agent | Leaflet map inside `#map` |
 | `panels.js`, `panels.css` | panels agent | Side panel inside `#side-panel` |
 | `hud.js`, `hud.css` | HUD agent | Helmet HUD inside `#hud` |
-| `sim.js` | sim agent | No DOM and no CSS. It is the **only writer of `state.sim`**. |
+| `sim.js`, `tests/sim.test.mjs` (+ `tests/index.js` imports) | sim agent | No DOM and no CSS. It is the **only writer of `state.sim`**. |
+
+Shared CSS from `style.css` you may use: tokens `--basis-primary`, `--basis-secondary`, `--basis-assumption`,
+`--demo`, `--demo-bg`, `--rover-path`, `--tube` (plus the older ones), the `.badge` / `.badge-demo` classes, and the
+basis badge `<span class="basis" data-basis="primary|secondary|assumption|demo">PRIMARY</span>` (text from
+`basisLabel(basis)` in util.js).
 
 Rules for every module:
 - Plain ES modules with no build step. The only global is `window.L` (Leaflet 1.9.4, loaded before `app.js`). Add no other CDNs.
@@ -50,6 +60,16 @@ Rules for every module:
 `bearingDeg(a,b)`, `cardinal(deg)` → "NE", `fmtMin(min)` → "h:mm", `fmtMinLong(min)` → "1 h 15 min",
 `fmtDistM(m)` → "340 m" / "4.98 km", `esc(str)`.
 
+New for the real data:
+- `pxToLonLat(px, geo)` → `[lon, lat]` or null, `lonLatToPx([lon, lat], geo)` → `[x, y]`, `fmtLonLat([lon, lat], digits=5)` →
+  "18.45851° N, 77.40609° E". `geo` is `ctx.data.geo`. This is **linear interpolation between the bounds.json corners**
+  (say "approx." or "linear" next to a readout). It reproduces `site.json` lon/lat to about 1e-6°. For the cursor, use
+  `pxToLonLat(latLngToPx(e.latlng), data.geo)`.
+- `effectiveBudget(state, config)` → `{ budgetMin, reserveMin, usableMin, demo, realBudgetMin, label, note }`. **Every module
+  that shows or uses the suit budget calls this** instead of reading `config.budgetMin` (which is always the real budget).
+  When `demo` is true, show `note` (= `DEMO_BUDGET_NOTE` = "DEMO SETTING, not the real suit budget") next to the number.
+- `DEMO_BUDGET_NOTE`, `basisLabel(basis)` → "PRIMARY" | "SECONDARY" | "ASSUMPTION" | "DEMO".
+
 ## ctx (passed to every init)
 
 ```js
@@ -57,20 +77,91 @@ ctx = {
   data: {
     base,            // absolute URL of the data folder, ending in '/'
     url(name),       // absolute URL of a data file, e.g. data.url('basemap.png'), data.url(layer.file)
-    bounds,          // bounds.json
-    layers,          // layers.json: [{ id, file, label, legend: [{color, label}] }]
-    stops,           // stops.json array (H base, A science, B depot ...)
+    bounds,          // bounds.json as is (real: crs, center_lonlat, corners_lonlat {nw,ne,se,sw}, no "fake")
+    geo,             // { nw, ne, se, sw: [lon, lat], widthPx, heightPx, center: [lon, lat], crs, fake, method } | null
+                     //   for pxToLonLat / lonLatToPx. Old fake corners [[nw],[se]] are expanded to all four.
+
+    layers,          // ARRAY (adapted from layers.json {grid, context_map, layers:[...]}; an old plain array also works),
+                     // sorted in display order:
+                     // [{ id, file, label, legend: [{color, label}], source, native_res, time_frame, note,
+                     //    group: 'terrain' | 'science' | 'other', trek_context }]
+                     // real ids: slope, rough, rocky, sand, nogo (terrain); geology, minerals, ti (science)
+    layerGroups,     // [{ id: 'terrain', label: 'Terrain', layerIds: [...] }, { id: 'science', label: 'Science', layerIds: [...] }]
+                     //   (only groups/ids that exist in the data; an 'other' group is appended for unknown ids)
+    layersMeta,      // { grid: {width_px, height_px, pixel_m} | null, contextMap: { source, layers: [string] } | null }
+
+    stops,           // stops.json array (H base, A science, B depot). Real fields: id, name, kind, px, why, expect,
+                     //   rock_unit, minerals (A), work_min (A, B), sol, photos [URL], tubes (B: a count, 10)
     stopsById,       // { H: stop, A: stop, B: stop }
-    routes,          // routes.json (variants, replan_rule, params, assumptions, warnings, time_home ...)
+    routes,          // routes.json (variants full/skipA with path, t_min, home_min, stop_plan, legs, replan[],
+                     //   checkpoints[], hazard_demo, why, why_detail, fits_budget; params; time_home; assumptions; warnings; sources)
     variantsById,    // { full: variant, skipA: variant }
-    env,             // env.json (or a default with env.missing = true)
-    timeHome,        // { width, height, stridePx, scaleMin, nodata, values: Uint16Array }
-    fake,            // true if bounds.json or routes.json has "fake": true (the top bar shows a FAKE DATA badge)
+
+    site,            // site.json as is | null (habitat, stop_a {sol, stack_unit, clay_frac, depot_samples_cored_here, hirise_slope_p90_deg, ...},
+                     //   stop_a_shortlist, depot_center, depot_samples_cored, criteria {stop_a, habitat}, status)
+    depot: {
+      center: { px, lon, lat, spreadM } | null,          // site.json depot_center (tubes spread ~35 m)
+      tubes: [{                                          // depot.json, 10 entries, plus where each was cored (site.json)
+        name, sampleId, dropSol, dropLmst, px, lon, lat,
+        closeup, closeupDem, credit,                     // close-up ortho image URL (PDS), DEM image URL, credit line
+        fromWaypoint: { sol, site, drive } | null,
+        coredSol: number | null, coredLonLat: [lon, lat] | null,   // may lie outside the 4 km box
+      }],
+    },
+    roverPath: null | {                                  // rover_path.json (Perseverance's real traverse in the box)
+      source,                                            // "NASA/JPL-Caltech Mars 2020 MMGIS traverse and waypoints"
+      segments: [{ sol, px: [[x, y], ...] }],            // 200 segments, one per sol, sols 14..753, ~11.7k points total
+      waypoints: [{ sol, site, drive, px, elev_m }],
+      solRange: [minSol, maxSol],
+    },
+    photosByStop: {                                      // photos.json, adapted. Always has every stop id.
+      [stopId]: {
+        note,                                            // e.g. H: "no rover images at this spot; images from rover positions within 400 m ..."
+        radiusM, parkedSols: [sol],
+        featured: [{ url, caption, credit }],            // show first (A: 1 mosaic, B: 2 mosaics + ..., H: none)
+        candidates: [{ sol, camera, url, thumb, fullRes, dateUtc, credit, imageId }],   // thumbnail strip (13-24 per stop)
+        fromStops: boolean,                              // true = no photos.json; featured came from stop.photos (no captions)
+      },
+    },
+    env: {                                               // built from env_data.json (fallback env.json, else defaults)
+      source: 'env_data' | 'env' | 'default', missing: boolean, fake: boolean,
+      // legacy keys (same meaning as the old env.json; sim and hud read these today)
+      dust: 'low' | 'moderate' | 'high' | 'unknown',     // word from dustTau.estimate via config.dustTauLevels (app thresholds)
+      solar_alert: boolean,                              // = spaceWeather.solarAlert
+      radiation_note: string,                            // one-line summary
+      suit: {}, assumptions: [],                         // empty for real data (budget comes from safety_params)
+      // new keys (null when not available)
+      dustTau: { estimate, range: [lo, hi], isEstimate, method, source, timeFrame } | null,     // real: 0.34 (0.16-0.53)
+      weather: { airTempC: {min, max}, groundTempC: {min, max}, pressurePa,
+                 hourly: [{ hour, airTempC, groundTempC, pressurePa }],   // 24 entries, LTST hour
+                 perSol: [...raw per_sol rows], wind: null, windNote, source, timeFrame } | null,
+      radiation: { doseUGyPerDay, doseSiliconUGyPerDay, standIn, note, reference, source, timeFrame, perDay } | null,
+                                                         // standIn true = Curiosity RAD at Gale, NOT Jezero: always say so
+      spaceWeather: { solarAlert, cmeArrivals30d: [{ arrivalUtc, glancingBlow, minorImpact, cmeIds, link, simulation }],
+                      upcoming: [], source, timeFrame, fetchedUtc, window: [from, to] } | null,   // NASA DONKI
+    },
+    safety: {                                            // safety_params.json
+      params: { [key]: { value, unit, basis, source, note } },   // raw
+      list: [{ key, value, unit, basis: 'primary' | 'secondary' | 'assumption', source, note }],   // 15 entries, file order
+      assumptions: [string],                             // the file's own "assumptions" list (also merged into config.assumptions)
+      marsG, missing: boolean,
+    },
+    provenance: null | { sources: [{ name, url, license, credit, processing }], literature: [string], aiUse: string },
+    credits: [string],       // unique credit lines: photos (featured + candidates), tube close-ups, provenance sources
+    tables: { units: { id: name }, minerals: { id: name }, arrays: { name: description }, limits: {...} },  // grids_readme.json
+    timeHome,        // { width, height, stridePx, scaleMin, nodata, values: Uint16Array }  (real: 1000x1000, scale 1 min)
+    fake,            // true if bounds.json, routes.json or env.json has "fake": true. Real data: false (badge hidden).
+    raw: { bounds, layers, site, depot, photos, roverPath, envData, env, safety, provenance, gridsReadme },  // untouched files (debug)
   },
   config: {
-    budgetMin, reserveMin,           // env.suit overrides routes.params (300 / 30 in the fake data)
+    budgetMin, reserveMin,           // REAL suit budget and reserve: safety_params.json (480 / 30, both basis primary),
+                                     //   else env.suit, else routes.params. Use effectiveBudget(state, config) for the one in force.
+    budgetSource,                    // 'safety_params' | 'env' | 'routes' | 'default'
+    demoBudgetMin: 240,              // the DEMO budget value offered by the top-bar select
+    budgetOptions: [{ value: null, label: 'Real 480 min', demo: false }, { value: 240, label: 'Demo 240 min', demo: true }],
     pixelM, widthPx, heightPx,
-    vFlatKmh, slopeSoftDeg, slopeHardDeg, weights,
+    vFlatKmh, slopeSoftDeg, slopeHardDeg, weights,   // from safety_params.json when present (real: 2.0 km/h, 15°, 20°)
+    dustTauLevels: [{ max: 0.6, word: 'low' }, { max: 1.0, word: 'moderate' }, { max: Infinity, word: 'high' }],
     slowPaceFactor: 0.8,             // walking speed multiplier when slowPace is on
     highAirBurnFactor: 1.6,          // air burn multiplier when faults.highAir is on
     turnaroundMarginMin: 10,         // turn-around alert when air.leftMin <= timeHome + reserve + this
@@ -78,7 +169,10 @@ ctx = {
     posErrM: 1.5,                    // 1-sigma crew position error with the link up
     drGrowthMPerMin: 1.2,            // uncertainty growth while the link is lost
     drDriftMPerMin: 0.6,             // drift of the displayed dot while the link is lost
-    assumptions: [{ text, source: 'routes' | 'env' | 'app' }],
+    assumptions: [{ text, source: 'routes' | 'safety' | 'env' | 'app', basis: 'primary' | 'secondary' | 'assumption' | 'demo',
+                    bases?: [{ basis, keys: [safety_params key] }] }],  // routes.json lines: basis per key they mention (util.assumptionBasis)
+                                     // routes.json + safety_params.json "assumptions" + app ones (budget line is 'primary';
+                                     // demo budget and demo factors are 'demo')
     warnings: [string],              // routes.json warnings
     replanRule: string,              // routes.json replan_rule (show it in the Replan card or under Assumptions)
   },
@@ -120,6 +214,9 @@ Top-level keys are shallow-merged by `setState`.
 | `speed` | `number`, x real time (60, 120, **300**, 600, 1200) | app.js | sim. Sim minutes per real second = `speed / 60`. |
 | `slowPace` | `boolean` | app.js | sim (and panels/hud for a "SLOW PACE" note) |
 | `faults` | `{ linkLost: boolean, highAir: boolean, storm: boolean, hazard: boolean }` | app.js | sim (it reacts), others display them |
+| `demoBudgetMin` | `number \| null` (null = real budget; `?budget=demo` starts at `config.demoBudgetMin`) | app.js (top-bar select `#sel-budget`, enabled only while `sim.status === 'idle'`). panels.js may add a mirror control in the Safety card that writes the same key, also only while idle. | everyone, always through `effectiveBudget(state, config)`. sim uses it for `air.budgetMin`, the replan rule and the turn-around check. Top bar shows a `DEMO BUDGET 240 MIN` badge while it is set (just `DEMO` at 1440 px and below; the dashed select still reads "Demo 240 min"). |
+| `roverPathOn` | `boolean` (false at start) | map.js only (its layer control) | map; others optional |
+| `depotOn` | `boolean` (true at start) | map.js only (its layer control). Below zoom 1 the tubes show as one "10 tubes" badge (click zooms to the depot). | map; others optional |
 | `sim` | `SimState \| null` | **sim.js only** | everyone |
 
 ### SimState (`state.sim`), written only by sim.js and always as a whole new object
@@ -156,7 +253,7 @@ Top-level keys are shallow-merged by `setState`.
     straightM,               // straight line from EV1's displayed px
     bearingDeg,              // from EV1's displayed px to the stop (the HUD arrow)
     etaT,                    // projected actual arrival time (sim clock)
-    plannedArriveT,          // from the planned variant's stop_plan (absent for H at the end of an abort, for example)
+    plannedArriveT,          // planned arrival on the ACTIVE route's clock (stop_plan before a reroute, the rebased new route after); absent on a return/abort
   },
   headingDeg: number,        // direction of travel (bearing of the current segment)
   working: null | { stopId, leftMin },
@@ -169,7 +266,8 @@ Top-level keys are shallow-merged by `setState`.
   rover: { px: [x, y], linkOk: boolean, aheadM: number },  // about roverAheadM ahead along active.path, clamped at the end
 
   air: {
-    budgetMin, reserveMin,
+    budgetMin, reserveMin,     // budgetMin = effectiveBudget(state, config).budgetMin (the DEMO value when set)
+    budgetDemo: boolean,       // NEW: true while the demo budget is in force (views label it)
     usedMin,                 // integral of burnFactor dt
     leftMin,                 // budgetMin - usedMin
     burnFactor,              // 1 or config.highAirBurnFactor
@@ -187,11 +285,12 @@ Top-level keys are shallow-merged by `setState`.
     projectedReturnT,        // t + remaining active minutes (with pace and work)
   },
   env: {
-    dust: string,            // env.json dust ('low' | 'moderate' | 'high' | ...)
-    solarAlert: boolean,     // env.json solar_alert || faults.storm
+    dust: string,            // data.env.dust ('low' | 'moderate' | 'high' | 'unknown')
+    dustTau: number | null,  // NEW: data.env.dustTau.estimate
+    solarAlert: boolean,     // data.env.solar_alert || faults.storm
     stormActive: boolean,    // faults.storm
     level: 'ok' | 'warn' | 'danger',
-    text: string,            // "Dust low · no solar alert" / "STORM: walk aborted, heading home"
+    text: string,            // "Dust low (τ 0.34) · no solar alert" / "STORM: walk aborted, heading home"
   },
   link: { ok: boolean, lostSinceT: number | null },  // mirrors !faults.linkLost; suit-only mode when !ok
   home: { px, bearingDeg, straightM, timeHomeMin, path: [[x, y]] }, // best known way home (show it in suit-only mode or during a storm)
@@ -202,7 +301,8 @@ Top-level keys are shallow-merged by `setState`.
   pendingReplan: ReplanProposal | null,   // non-null means a reroute is waiting for the astronaut (sim is paused)
   hazard: { px, radiusPx, t, leg } | null, // rock field confirmed by the rover camera (map draws it)
   hazardArmed: boolean,                   // Rock field demo on and its trigger is still ahead
-  checkpoints: [{ at, px }],              // upcoming mid-leg checkpoints on the active route (route clock)
+  checkpoints: [{ at, px }],              // upcoming mid-leg checkpoints on the active route (route clock). On real data this
+                                          //   can include checkpoints of other variants on shared segments (9 on the full route, not 7)
   alerts: Alert[],           // oldest first, at most about 30
 }
 ```
@@ -223,7 +323,7 @@ ReplanProposal = {
   atStopId: string | null,         // null when proposed mid-leg (air / storm)
   atStopName: string,
   arrivedT: number,                // actual T (sim clock) when the rule was applied
-  plannedArriveT: number | null,   // from the planned variant's stop_plan
+  plannedArriveT: number | null,   // active route's planned arrival (same clock as behindMin = t - routeT)
   behindMin: number,
   kind: 'skip_work' | 'drop' | 'abort' | 'return',
   label: string,                   // "Skip the 45-min work at Delta outcrop"
@@ -237,7 +337,8 @@ ReplanProposal = {
     budgetMin, reserveMin,
     marginMin: number,             // budgetMin - reserveMin - projectedReturnT
     airLeftAtReturnMin: number,    // air.leftMin - minutes * burnFactor
-    text: string,                  // "Back by 4:19 with 41 min of air to spare (30 min reserve kept)"
+    text: string,                  // "Back by 4:19 with 41 min of air to spare (30 min reserve kept)"; while the demo budget is on it
+                                   //   ends "Against the 240 min demo budget (DEMO SETTING, not the real suit budget; real 480 min)"
   },
   rejected: [{ kind, label, projectedReturnT, overByMin }],  // options that failed the rule, in order
 }
@@ -334,4 +435,96 @@ The HUD may also add `Enter` to confirm a pending replan. No other module binds 
 - An alerts banner (the newest active alert). In suit-only mode it says "ROVER LINK LOST · SUIT-ONLY" and shows the way home.
   A storm turns it red.
 - A replan card when `pendingReplan` is set, with a big Confirm button (and the `Enter` key) that emits `replan:confirm`.
-- Small assumption footnotes (budget and reserve from `config`) and a FAKE DATA tag when `data.fake`.
+- Small assumption footnotes (budget and reserve from `effectiveBudget`) and a FAKE DATA tag when `data.fake` (top left,
+  under the SLOW PACE tag; the top right holds the env chips).
+- hud.js also exports the pure helper `hudEnvChips(simEnv, dataEnv, hourLtst)` → the temperature / dust / solar chips
+  (works with the old `env.json` shape too: dust and solar only).
+
+## Real-data tasks (Nov 14): what each module must now do
+
+Everything above still holds; this section adds to it. Each agent edits only its own files (see File ownership).
+The data shapes are under `ctx` above; look at the real values with `window.marswalk.data` in the console.
+Labels: anything with `basis: "assumption"` is tagged ASSUMPTION, `secondary` is SECONDARY, `primary` is PRIMARY
+(with its `source` on hover or in a disclosure), and anything demo-only (the Demo budget, Slow pace, High air use) is
+tagged DEMO. Credit NASA where images or data are shown (use the `credit` strings). No NASA logos.
+
+### The demo budget story (all modules)
+The real budget is 480 min with a 30 min reserve (450 usable). The full plan takes ~186 min, so "Slow pace" alone can
+never trigger a replan. The top bar has a **Demo budget** select (`Real 480 min` default / `Demo 240 min`) that writes
+`state.demoBudgetMin`. Checked against the real `routes.json` with `slowPaceFactor` 0.8:
+- Demo 240, on time: the plan fits; back at about T+3:06 with ~54 min of air left; no alert.
+- Demo 240, slow pace: the first checkpoint (planned T+0:15, actual ~T+0:19, ~4 min behind) proposes
+  **"Skip the 45-min work at Delta outcrop"** (the planned option misses by ~1 min). After Confirm the crew still works at
+  the depot and gets home at about T+2:46 with ~74 min of air left (reserve kept).
+- Real 480, slow pace: no replan (back with ~269 min left). Under 225 min on-time runs hit the turn-around alert at B,
+  which is why the demo value is 240 (235 gives a wider slow-pace miss of ~6 min if the 1-min margin proves fragile).
+Wherever a budget number is shown while `effectiveBudget(...).demo` is true, it must carry `DEMO_BUDGET_NOTE`
+("DEMO SETTING, not the real suit budget") or a DEMO tag with that text on hover, and show the real value next to it.
+
+### sim.js + tests (sim agent)
+1. Budget: read `effectiveBudget(getState(), config)` instead of `config.budgetMin` everywhere (air, replan rule,
+   turn-around, `safety` texts, seek clamp). While `status === 'idle'`, a change of `demoBudgetMin` rebuilds `sim.air`
+   (and emits nothing else). After the walk starts, the select is disabled; if the key still changes, apply it from the
+   next step (no reset). Set `air.budgetDemo` and mention "demo budget" in replan `safety.text` when it is in force.
+2. Env: `sim.env.dust` from `data.env.dust`, add `sim.env.dustTau`, solar alert from `data.env.solar_alert` (DONKI). The
+   text becomes e.g. "Dust low (τ 0.34) · no solar alert".
+3. Everything else is unchanged. Do not read `env.json` or `data.env.suit`.
+4. `tests/sim.test.mjs` must pass on the REAL data: never assume the old 300 min budget. Set the budget explicitly per
+   scenario (pass `demoBudgetMin` in the test state, or the budget arguments to the pure functions): demo 240 for the
+   slow-pace story (checkpoint proposes skip_work at A, then done with reserve kept), real 480 elsewhere (on-time and
+   slow pace: no replan). Re-derive the hard-coded times (the old fake T+0:42 etc.) from `routes.json`. Add tests for
+   any new pure logic, and a test for `effectiveBudget` / `pxToLonLat` (corner + `site.json` habitat round trip, 1e-5°).
+   Several old tests currently fail on the real data (e.g. "expected checkpoints on the route", a test expecting
+   `awaiting_confirm`): they assumed the 300 min fake budget.
+
+### map.js + map.css (map agent)
+1. **Overlays:** all 8 `data.layers`, grouped by `data.layerGroups` (headings "Terrain": slope, rough, rocky, sand, nogo;
+   "Science": geology, minerals, ti). Each has a toggle, an opacity slider, and its legend (geology has 21 entries and
+   minerals 20: make those legends scroll or collapse). Show `source`, `native_res`, `time_frame` and `note` on hover or
+   in an info line under the open layer. Legend items or notes that mention "assumption" get the ASSUMPTION tag.
+   Keep `layersOn` (keys = layer ids). Put the base imagery credit (`data.layersMeta.contextMap`, and the HiRISE
+   orthomosaic credit from `data.provenance`) in a small attribution line.
+2. **Depot tubes:** when `depotOn`, draw the 10 `data.depot.tubes` as small markers (`--tube`) around B; popup with
+   name, sample ID, drop sol (and cored sol), lon/lat, and the close-up image (`<img>` with `loading="lazy"`, an
+   `onerror` fallback to a link) with its credit. They overlap at low zoom: show them from zoom >= 0 or cluster into one
+   "10 tubes" marker below that.
+3. **Perseverance traverse:** toggle "Perseverance traverse (real)" writing `roverPathOn`; draw `data.roverPath.segments`
+   as thin polylines (`--rover-path`) with tooltips "Sol N", and a few sol labels (e.g. every ~50 sols, plus the depot
+   sols 648-692 and stop A's sols 455-534). Source line from `roverPath.source`. Skip silently if `roverPath` is null.
+4. **Lon/lat readout:** on `mousemove` show `fmtLonLat(pxToLonLat(latLngToPx(e.latlng), data.geo))` plus the px and the
+   time home (`ctx.timeHomeAt`), labelled "approx. (linear between corners)". Hide it when `data.geo` is null.
+5. Keep routes, stops, crew, rover, checkpoints, rock field, proposed path, scale bar exactly as now. The layer control
+   now holds more: keep it collapsible so it does not cover the route. (Done: it starts collapsed when the map is
+   narrower than 1000 px, i.e. on 1280 px laptops.)
+
+### panels.js + panels.css (panels agent)
+1. **Stop preview** (`selectedStopId`): name, kind, rock unit, minerals, why, expect, sol, work time, planned/actual times
+   as now. Photos from `data.photosByStop[id]`: featured images first (large, with caption and credit), then a
+   thumbnail strip of `candidates` (thumb, "Sol N · CAMERA", click opens `url` in a new tab; credit under the strip).
+   When `note` is set (H), show it above the strip ("no rover images at this spot; ..."). Keep the `onerror` fallback.
+   For A, add facts from `data.site.stop_a` when present (cored sample "Bearwallow", clay fraction, slope p90).
+   For B, a **depot tube list** from `data.depot.tubes` (name, sample ID, drop sol, close-up link with credit).
+2. **Safety card:** the budget from `effectiveBudget(state, config)`: real "480 min suit budget, 30 min reserve (450
+   usable)" with PRIMARY badges and their sources (`data.safety.params.suit_budget_min/reserve_min`). When demo: a
+   clear DEMO block ("Demo 240 min: DEMO SETTING, not the real suit budget; real 480 min") and optionally a mirror
+   select writing `demoBudgetMin` (disabled unless idle). The air bar uses the effective budget. Then a
+   **Safety parameters** disclosure listing `data.safety.list` (value + unit, basis badge, source on hover/expand,
+   note). Keep warnings, replan rule and `config.assumptions` (render each with its `basis` badge, not all as ASSUMPTION).
+   Show `apollo_time_in_suit_min` (300, historical reference) next to the budget if you like.
+3. **Environment card** from `data.env` (fall back to the old one-liners when `source !== 'env_data'`):
+   dust τ estimate and range (tag "estimate", method on hover), air and ground temperature min/max (°C), pressure (Pa),
+   wind note ("not available: MEDA wind sensor damaged in 2022"), radiation dose with a **"Curiosity stand-in"** tag and
+   its note, solar alert status, and the recent Mars CME arrivals (DONKI, last 30 days: date, glancing/minor impact,
+   link). Each block shows its `timeFrame` and `source` in small text. An optional tiny hourly temperature sparkline.
+4. **Data and credits** section (collapsed by default) from `data.provenance.sources` (name linked to url, license,
+   credit), `literature`, `aiUse`, and `data.credits` (photo credits).
+5. Remove the "env.json missing" warning for real data (`env.missing` is false); keep it for `source === 'default'`.
+
+### hud.js + hud.css (HUD agent)
+1. Budget: use `sim.air.budgetMin` / `effectiveBudget(state, config)`. While demo, show a small persistent
+   "DEMO BUDGET 240" tag near the air readout (amber dashed, `--demo`), and the footnote reads
+   "Budget 240 min: DEMO SETTING, not the real suit budget (real 480)". Otherwise "Budget 480 / reserve 30 min".
+2. Env strip, glanceable: air temperature (now: pick the `weather.hourly` entry for a fixed local hour of 13:00 LTST,
+   or show the min/max range), dust word + τ, solar alert (DONKI) — e.g. "-16°C · DUST LOW τ0.34 · NO SOLAR ALERT".
+   Storm / solar alert turns it red as now. Radiation is not needed on the HUD.
+3. Keep everything else. No FAKE tag for real data (it follows `data.fake`).
