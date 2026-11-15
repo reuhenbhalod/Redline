@@ -45,6 +45,7 @@ export function initPlanner(ctx) {
     const active = data.layers.filter((l) => s.layersOn?.[l.id]);
     legend.hidden = active.length === 0;
     legend.innerHTML = active.map((l) => {
+      if (l.id === 'minerals') return mineralLegend(l);
       const lg = (l.legend || []).filter((x) => x.color && !String(x.color).startsWith('ramp:'));
       const shown = lg.slice(0, 6);
       return `<div class="lg-layer"><span class="lg-name">${esc(l.label)}</span>
@@ -52,6 +53,29 @@ export function initPlanner(ctx) {
         ${lg.length > shown.length ? `<li class="lg-more">+ ${lg.length - shown.length} more</li>` : ''}</ul>
         <span class="lg-src">${esc(l.source || '')}${l.native_res ? ` · ${esc(l.native_res)}` : ''}</span></div>`;
     }).join('');
+  }
+
+  // CRISM legend: one row per mineral (high and medium confidence share a colour), grouped by what it means
+  // for the crew, clays first, so the colours along the route (salmon olivine + smectite, brown kaolinite) are
+  // always labelled. Groups follow pipeline/common.py CRISM_CLASSES.
+  const MINERAL_GROUPS = [
+    ['Clays · form in water', ['Olivine + smectite', 'Kaolinite', 'Fe/Mg-smectite', 'Mg-smectite 2', 'Olivine/smectite + 2.2 µm']],
+    ['Carbonates · also form in water', ['Mg-carbonate', 'Carbonate + 2.2 µm']],
+    ['Volcanic · not water-formed', ['Olivine', 'High-Ca pyroxene', 'Low-Ca pyroxene']],
+  ];
+  function mineralLegend(l) {
+    const color = {};
+    for (const x of l.legend || []) {
+      const name = String(x.label || '').replace(/\s*\((high|medium) confidence\)\s*$/i, '');
+      if (x.color && !color[name]) color[name] = x.color;
+    }
+    const groups = MINERAL_GROUPS.map(([h, names]) => {
+      const rows = names.filter((n) => color[n]).map((n) => `<li><i style="background:${esc(color[n])}"></i>${esc(n)}</li>`).join('');
+      return rows ? `<li class="lg-grp">${esc(h)}</li>${rows}` : '';
+    }).join('');
+    return `<div class="lg-layer lg-minerals"><span class="lg-name">${esc(l.label)}</span>
+      <ul>${groups}<li class="lg-grp">No colour</li><li class="lg-more">covered by CRISM but not identified, or uncertain</li></ul>
+      <span class="lg-src">Brighter = high confidence, darker = medium · ${esc(l.source || '')}${l.native_res ? ` · ${esc(l.native_res)}` : ''}</span></div>`;
   }
 
   // ------------------------------------------------------------------ GO TO search
