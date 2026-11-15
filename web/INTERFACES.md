@@ -6,9 +6,11 @@ If you need a field that is missing, compute it locally inside your module.
 
 Serve the repo root (`python3 -m http.server 8000` from the repo) and open `/web/index.html`.
 Data comes from `../data/` by default. Override it with `?data=<path relative to /web/>`. More URL params:
-`?mode=planner|tablet` picks the view, `?stop=A` opens a stop preview, `?variant=skipA` picks the planned variant, and `?budget=demo` starts with the
-DEMO budget (`?budget=<minutes>` sets any demo value). Demo deep links: `?t=<min>` seeks after load, `?fault=link,air,storm,hazard`
-turns faults on from the start, `?slow=1` turns on slow pace, `?demo=1` opens the DEMO drawer.
+`?mode=planner|tablet` picks the view, `?stop=A` opens a stop preview, `?variant=skipA` picks the planned variant. Demo deep links:
+`?t=<min>` seeks after load (stopping early at an unconfirmed reroute), `?fault=link,air,storm` turns faults on from the start
+(the rock field, `faults.hazard`, is on by default; `?fault=nohazard` turns it off), `?slow=1` turns on slow pace, and
+`?events=0` disables the scripted walk events (events.js). Testing only: `?budget=demo` / `?budget=<minutes>` still sets
+`demoBudgetMin` (there is no top-bar budget select any more). `?demo=1` and the DEMO drawer are gone.
 
 **Real data (Nov 14).** `data/` now holds the pipeline's real files. New files are optional for `app.js`, so an old
 fake folder still loads (`?data=<folder>`; the browser logs 404s for the missing new files, which is expected there).
@@ -21,15 +23,19 @@ There is no `env.json` any more: the environment comes from `env_data.json`, the
 | `index.html`, `style.css`, `app.js`, `util.js`, `INTERFACES.md`, `README.md` | scaffold (frozen) | You may *import* from `util.js`. Never import `app.js`; use the `ctx` you are given. |
 | `map.js`, `map.css` | map agent | Leaflet map inside `#map` |
 | `panels.js`, `panels.css` | panels agent | Side panel inside `#side-panel` |
-| `hud.js`, `hud.css` | HUD agent | Helmet HUD inside `#hud` |
+| ~~`hud.js`, `hud.css`~~ | removed | The helmet HUD was removed (Nov 14). The HUD sections below are historical. |
 | `sim.js`, `tests/sim.test.mjs` (+ `tests/index.js` imports) | sim agent | No DOM and no CSS. It is the **only writer of `state.sim`**. |
 | `tablet.js`, `tablet.css` | tablet view | Astronaut tablet inside `#tablet` (mode `tablet`). Read-only; emits `replan:confirm`, `toast`. |
 | `minimap.js` | shared | SVG mini map on the basemap that follows a point (used by tablet). |
+| `smooth.js` | shared | `createSmoother(tauSec, snapPx)`: display-only exponential smoothing of moving markers (crew, rover, tablet camera). Never changes state. |
+| `pathfind.js` | sim helper | `parseWalkGrid(buf, meta)`, `findDetour(grid, fromPx, toPx, zones)`, `pathSeconds(grid, path)`: A* detours on `walk_time.bin`. Pure, no DOM. |
+| `events.js` | walk events | Scripted walk events (O2 pop-up, storm forecast pop-up, toasts) in the shared `#event-pop` card and the top-bar `#storm-chip`. Writes `faults.highAir`, `slowPace`, `playing` (pop-ups pause) and `stormForecast`. Exports `initEvents`, `pickModelCme(env)`. |
+| `science.js` | science prompts | "Science along the way" toasts from `route_science.json` and hexagon markers on the planner map (`ctx.modules.map.map`). Writes `scienceLog`. |
 | `planner.js`, `planner.css` | planner chrome | Layer rail, GO TO search, legend, route sheet and stop dossier (mockups). Writes `layersOn`, `roverPathOn`, `depotOn`, `selectedStopId`, `plannedVariantId` (idle only), `playing`; emits `map:focus`. The map's own layer control is hidden. `panels.js` still renders into `#side-panel`, which sits inside `#sheet-wrap`: its banners and replan card show above the sheet, its route/stop cards are replaced by the sheet, and safety/env/alerts/credits open under "Mission details". |
 | ~~`demo.js`~~ | removed | The DEMO console was removed (Nov 14). The demo is the rock-field scenario, armed at boot (`faults.hazard: true`); the top bar has Play / Pause and Restart. |
 
 **Redesign (Nov 14, `docs/ui-redesign.md`).** Two views: `planner`, `tablet` (top-bar tabs, keys 1–2, Esc returns to the planner). The helmet HUD
-(`hud.js`, `#hud`) and rover (`rover.js`, `#rover`) views were removed; rows about them below are historical. The DEMO drawer was later removed; see `demo.js` below. New tokens in `style.css`: `--signal` (teal accent),
+(`hud.js`, `#hud`) and rover (`rover.js`, `#rover`) views were removed; rows about them below are historical. The DEMO drawer was later removed; see `demo.js` above. New tokens in `style.css`: `--signal` (teal accent),
 `--signal-ink`, `--glass`, `--map-tint` (CSS filter for the basemap only), `--label-ls`, and the `.mlabel` class.
 
 Shared CSS from `style.css` you may use: tokens `--basis-primary`, `--basis-secondary`, `--basis-assumption`,
@@ -159,6 +165,8 @@ ctx = {
     credits: [string],       // unique credit lines: photos (featured + candidates), tube close-ups, provenance sources
     tables: { units: { id: name }, minerals: { id: name }, arrays: { name: description }, limits: {...} },  // grids_readme.json
     timeHome,        // { width, height, stridePx, scaleMin, nodata, values: Uint16Array }  (real: 1000x1000, scale 1 min)
+    walkGrid,        // pathfind.parseWalkGrid(walk_time.bin, walk_grid.json) = { width, height, stridePx, cellM, values: Uint8Array } | null
+                     //   1000x1000 cells of 4 m; deciseconds to cross a cell along an axis; 255 = no-go. Optional file.
     fake,            // true if bounds.json, routes.json or env.json has "fake": true. Real data: false (badge hidden).
     raw: { bounds, layers, site, depot, photos, roverPath, envData, env, safety, provenance, gridsReadme },  // untouched files (debug)
   },
@@ -188,6 +196,7 @@ ctx = {
   getState(), setState(patchOrFn), subscribe(fn) -> unsubscribe,  // fn(state, prev, changed:Set<string>)
   on(name, fn) -> unsubscribe, off(name, fn), emit(name, payload),
   timeHomeAt(x, y) | timeHomeAt([x, y]) -> minutes | null,       // from time_home.bin; null = unreachable/off-grid
+  walkGrid,                                                      // = data.walkGrid (sim.js live detours)
   setMode('planner' | 'tablet'),
   toast({ level: 'info'|'ok'|'warn'|'danger', title, text, timeoutMs }),
   els: { map, sidePanel, tablet, toasts },                      // containers (HTMLElements)
@@ -199,14 +208,17 @@ ctx = {
 ## Init signatures
 
 All are named exports. They may be sync or async, and their return value goes into `ctx.modules[name]`.
-`app.js` calls them in this order: **initSim → initMap → initPanels → initTablet → initPlanner → initDemo**. Each call is wrapped in a try/catch,
+`app.js` calls them in this order: **initSim → initMap → initPanels → initTablet → initPlanner → initEvents → initScience** (`ctx.modules.map.map` is the L.Map science.js draws on). Each call is wrapped in a try/catch,
 and a failure shows a toast. Every module should render once from `getState()` inside init and then subscribe.
 
 ```js
 export function initSim(ctx)    // sim.js   — must set a complete state.sim synchronously before returning
 export function initMap(ctx)    // map.js   — may return { map }  (the L.Map)
 export function initPanels(ctx) // panels.js
-export function initHud(ctx)    // hud.js
+export function initTablet(ctx)  // tablet.js
+export function initPlanner(ctx) // planner.js
+export function initEvents(ctx)  // events.js  — returns null with ?events=0
+export async function initScience(ctx) // science.js — returns { prompts, sources }, or null when route_science.json is missing
 ```
 
 ## State shape
@@ -215,17 +227,20 @@ Top-level keys are shallow-merged by `setState`.
 
 | Key | Type | Writers | Readers |
 | --- | --- | --- | --- |
-| `mode` | `'planner' \| 'tablet'` | app.js (top bar, `h` key, Esc), any module via `ctx.setMode` | all. `app.js` toggles `body[data-mode]` and `#hud[hidden]`. map.js calls `invalidateSize()` when the mode returns to planner. hud.js renders only while in HUD mode. |
-| `plannedVariantId` | `string` (`'full'`, `'skipA'`) | panels.js (variant picker), map.js (click on a variant polyline) | sim, map, panels, hud. **The sim applies it only while `sim.status === 'idle'`** (it rebuilds `sim.active` from it). Otherwise it ignores it until the next reset. The panels should disable the picker unless the sim is idle. |
+| `mode` | `'planner' \| 'tablet'` | app.js (top-bar tabs, keys `1`/`2`, Esc), any module via `ctx.setMode` | all. `app.js` toggles `body[data-mode]` and `#tablet[hidden]`. map.js calls `invalidateSize()` when the mode returns to planner. tablet.js renders only in tablet mode. |
+| `plannedVariantId` | `string` (`'full'`, `'skipA'`) | panels.js (variant picker), map.js (click on a variant polyline) | sim, map, panels, planner, tablet. **The sim applies it only while `sim.status === 'idle'`** (it rebuilds `sim.active` from it). Otherwise it ignores it until the next reset. The panels should disable the picker unless the sim is idle. |
 | `selectedStopId` | `string \| null` | map.js (marker click), panels.js (stop list, close button) | panels (stop preview), map (highlight marker) |
 | `layersOn` | `{ [layerId]: boolean }` (keys from layers.json, all false at start) | planner.js (layer rail); map.js | map, panels (optional) |
-| `playing` | `boolean` | app.js (Play button, space key, Reset sets false). sim.js sets false on a pending replan, at done and at abort-done, and sets true after a confirm. | sim, top bar |
+| `playing` | `boolean` | app.js (Play button, space key, Reset sets false), planner.js (START EVA), tablet.js (Pause/Resume, Start walking home, Wait for link), events.js (a pop-up pauses; Understood resumes). sim.js sets false on a pending replan, at done and at abort-done, and sets true after a confirm. Play after the walk ended restarts it. | sim, top bar |
 | `speed` | `number`, x real time (60, 120, **300**, 600, 1200) | app.js | sim. Sim minutes per real second = `speed / 60`. |
-| `slowPace` | `boolean` | app.js | sim (and panels/hud for a "SLOW PACE" note) |
-| `faults` | `{ linkLost: boolean, highAir: boolean, storm: boolean, hazard: boolean }` | app.js | sim (it reacts), others display them |
+| `slowPace` | `boolean` | app.js (`?slow=1`), events.js (after the O2 pop-up, until ~T+0:35) | sim (and panels for a "SLOW PACE" note) |
+| `faults` | `{ linkLost: boolean, highAir: boolean, storm: boolean, hazard: boolean }` (`hazard` true at boot = rock-field demo armed) | app.js (`?fault=`), events.js (`highAir` during the O2 event) | sim (it reacts), others display them |
 | `demoBudgetMin` | `number \| null` (null = real budget; `?budget=demo` starts at `config.demoBudgetMin`) | app.js (top-bar select `#sel-budget`, enabled only while `sim.status === 'idle'`). panels.js may add a mirror control in the Safety card that writes the same key, also only while idle. | everyone, always through `effectiveBudget(state, config)`. sim uses it for `air.budgetMin`, the replan rule and the turn-around check. Top bar shows a `DEMO BUDGET 240 MIN` badge while it is set (just `DEMO` at 1440 px and below; the dashed select still reads "Demo 240 min"). |
 | `roverPathOn` | `boolean` (false at start) | planner.js (layer rail); map.js | map; others optional |
 | `depotOn` | `boolean` (true at start) | map.js only (its layer control). Below zoom 1 the tubes show as one "10 tubes" badge (click zooms to the depot). | map; others optional |
+| `tabletCrew` | `0 \| 1` (0 at start) | nothing writes it now (the DEMO console that did was removed) | tablet.js: whose tablet is shown (EV1 / EV2) |
+| `stormForecast` | `null \| { arrivalT, deadlineT, basedOn: { arrivalUtc, cmeId, link, simulation, glancingBlow, minorImpact } \| null }` (not in the initial state: undefined = null) | **events.js only**: set when the storm pop-up fires on arrival at A (`arrivalT = t + 180`, `deadlineT = arrivalT - 30`); cleared to null on Restart / reset to idle / replay | sim.js (copies it to `sim.env.stormForecast`, republishes on change), planner.js, tablet.js |
+| `scienceLog` | `[{ id, t, title, prompt, source, kind: 'unit' \| 'mineral', to, px }]` (`[]` at start) | **science.js only**: one entry per fired prompt; `[]` on sim reset | nothing displays it yet |
 | `sim` | `SimState \| null` | **sim.js only** | everyone |
 
 ### SimState (`state.sim`), written only by sim.js and always as a whole new object
@@ -242,7 +257,7 @@ Top-level keys are shallow-merged by `setState`.
 
   active: {                  // the route the crew is following now
     id: string,              // 'full' | 'skipA' | 'full@A:skip_work' | 'return@93.2' ...
-    kind: 'planned' | 'skip_work' | 'drop' | 'abort' | 'return',
+    kind: 'planned' | 'skip_work' | 'drop' | 'abort' | 'return' | 'hazard',   // 'hazard' = a confirmed detour
     label: string,           // "Full plan H→A→B→H", "Skip work at Delta outcrop", "Abort: home from A"
     variantId: string,       // the routes.json variant it came from
     stops: string[],         // stop ids of this route, from where it started, e.g. ['A','B','H']
@@ -296,10 +311,17 @@ Top-level keys are shallow-merged by `setState`.
   env: {
     dust: string,            // data.env.dust ('low' | 'moderate' | 'high' | 'unknown')
     dustTau: number | null,  // NEW: data.env.dustTau.estimate
-    solarAlert: boolean,     // data.env.solar_alert || faults.storm
+    solarAlert: boolean,     // data.env.solar_alert || faults.storm || stormForecast != null
     stormActive: boolean,    // faults.storm
-    level: 'ok' | 'warn' | 'danger',
-    text: string,            // "Dust low (τ 0.34) · no solar alert" / "STORM: walk aborted, heading home"
+    stormForecast: object | null,   // state.stormForecast (simulated forecast from events.js), or null
+    level: 'ok' | 'warn' | 'danger',   // at least 'warn' while a forecast is active
+    text: string,            // "Dust low (τ 0.34) · no solar alert" / "Dust low (τ 0.34) · SOLAR STORM T+3:53 · inside by T+3:23"
+                             //   ("· crew sheltered" once done) / "STORM: walk aborted, heading home"
+  },
+  radiation: {               // Curiosity RAD at Gale as a stand-in for Jezero: always say so
+    rateUGyPerDay: number | null,   // data.env.radiation.doseUGyPerDay (real: 218.8)
+    evaDoseUGy: number | null,      // rate * minutes outside / 1440; 0 while idle
+    source: string,                 // 'Curiosity RAD, Gale crater (stand-in for Jezero); dose = daily rate × time outside'
   },
   link: { ok: boolean, lostSinceT: number | null },  // mirrors !faults.linkLost; suit-only mode when !ok
   home: { px, bearingDeg, straightM, timeHomeMin, path: [[x, y]] }, // best known way home (show it in suit-only mode or during a storm)
@@ -310,6 +332,8 @@ Top-level keys are shallow-merged by `setState`.
   pendingReplan: ReplanProposal | null,   // non-null means a reroute is waiting for the astronaut (sim is paused)
   hazard: { px, radiusPx, t, leg } | null, // rock field confirmed by the rover camera (map draws it)
   hazardArmed: boolean,                   // Rock field demo on and its trigger is still ahead
+  marks: [{ id, px, t, radiusPx }],       // hazards the crew marked (hazard:mark); routes keep radiusPx (20 px = 40 m) clear
+  abandoned: [{ path, t, trigger }],      // old route pieces given up for a confirmed detour (map/tablet draw them red)
   checkpoints: [{ at, px }],              // upcoming mid-leg checkpoints on the active route (route clock). On real data this
                                           //   can include checkpoints of other variants on shared segments (9 on the full route, not 7)
   alerts: Alert[],           // oldest first, at most about 30
@@ -320,21 +344,23 @@ Top-level keys are shallow-merged by `setState`.
 Alert = {
   id: string, t: number,
   level: 'info' | 'ok' | 'warn' | 'danger',
-  kind: 'replan' | 'link' | 'air' | 'storm' | 'arrive' | 'done' | 'info',
+  kind: 'replan' | 'link' | 'air' | 'storm' | 'arrive' | 'done' | 'info' | 'hazard' | 'marked',
+                             // in tablet mode app.js only toasts kind 'marked'; replan alerts never toast
   title: string, text: string,
   active: boolean,           // e.g. the link-lost alert stays active until the link is restored
 }
-// HUD banner = the newest alert with active === true (or a pending replan).
+// Tablet banner = the newest alert with active === true (or a pending replan).
 
 ReplanProposal = {
   id: string,                      // unique, e.g. 'A@59.8'
-  trigger: 'schedule' | 'air' | 'storm' | 'hazard',   // checkpoint proposals also set checkpoint: true, atStopId: null
+  trigger: 'schedule' | 'air' | 'storm' | 'hazard' | 'marked',   // checkpoint proposals also set checkpoint: true, atStopId: null;
+                                   //   'hazard' = rover-confirmed rock field, 'marked' = a hazard the crew marked
   atStopId: string | null,         // null when proposed mid-leg (air / storm)
   atStopName: string,
   arrivedT: number,                // actual T (sim clock) when the rule was applied
   plannedArriveT: number | null,   // active route's planned arrival (same clock as behindMin = t - routeT)
   behindMin: number,
-  kind: 'skip_work' | 'drop' | 'abort' | 'return',
+  kind: 'skip_work' | 'drop' | 'abort' | 'return' | 'hazard',
   label: string,                   // "Skip the 45-min work at Delta outcrop"
   option: object,                  // the raw routes.json replan option (or a synthesized one with the same shape)
   minutes: number,                 // option.minutes
@@ -350,6 +376,8 @@ ReplanProposal = {
                                    //   ends "Against the 240 min demo budget (DEMO SETTING, not the real suit budget; real 480 min)"
   },
   rejected: [{ kind, label, projectedReturnT, overByMin }],  // options that failed the rule, in order
+  hazard?: { px, radiusPx, ... },  // detours only: the zone being avoided (marked: true for crew marks)
+  abandoned?: [[x, y]],            // detours only: the old path given up (drawn red while pending, then kept in sim.abandoned)
 }
 
 ReplanRecord = { id, t, atStopId, kind, label, confirmedT: number | null, trigger }
@@ -361,16 +389,17 @@ ReplanRecord = { id, t, atStopId, kind, label, confirmedT: number | null, trigge
 | --- | --- | --- | --- |
 | `sim:reset` | none | app.js (Reset button, `r` key) | sim: rebuilds from `plannedVariantId`, `t = 0`, `status = 'idle'`, keeps the toggles |
 | `sim:seek` | `{ t }` | app.js (scrubber) | sim: reset, then fast-forward in steps of 0.25 min or less with the current toggles until `t` is reached, stopping early at a pending replan. No toasts while seeking (emit alerts with `toast: false`). |
-| `replan:confirm` | `{ id }` (the `pendingReplan.id`) | panels.js and hud.js (Confirm buttons; HUD also on the `Enter` key) | sim: switch `active` to the proposal, append to `dropped`, set `confirmedT`, clear `pendingReplan`, set `playing: true` |
+| `replan:confirm` | `{ id }` (the `pendingReplan.id`) | panels.js (Confirm reroute) and tablet.js (Accept new route) | sim: switch `active` to the proposal, append to `dropped`, set `confirmedT`, clear `pendingReplan`, set `playing: true` |
 | `replan:proposed` | `ReplanProposal` | sim | optional (for example, the HUD flashes) |
 | `replan:applied` | `ReplanRecord` | sim | optional |
 | `alert` | `Alert` (+ optional `toast: false`) | sim, whenever it pushes an alert | app.js shows a toast unless `toast === false` |
-| `map:focus` | `{ px, zoom? }` | panels.js (clicking a stop), hud.js (optional) | map: `panTo(pxToLatLng(px))` |
+| `map:focus` | `{ px, zoom? }` | panels.js (clicking a stop or tube), planner.js (GO TO, VIEW, Show on map) | map: `panTo(pxToLatLng(px))` |
 | `toast` | `{ level, title, text, timeoutMs }` | anyone | app.js |
+| `hazard:mark` | none | tablet.js (Mark hazard) | sim: pins a mark at EV1's true position (recorded in the seek timeline), alerts, and proposes a detour if the route ahead crosses it |
 | `app:ready` | `ctx` | app.js after all inits | optional |
 
-Keyboard (app.js): `h` toggles Planner/HUD, `Esc` leaves the HUD, `space` toggles play/pause, `r` resets.
-The HUD may also add `Enter` to confirm a pending replan. No other module binds global keys.
+Keyboard (app.js): `1` / `2` pick Planner / Tablet, `Esc` returns to the planner, `space` toggles play/pause, `r` resets.
+No other module binds global keys.
 
 ## Module responsibilities
 
@@ -435,7 +464,7 @@ The HUD may also add `Enter` to confirm a pending replan. No other module binds 
    The panel also shows a history of `sim.replans`.
 5. **Alerts log** from `sim.alerts`.
 
-### hud.js (`#hud`, full-screen SVG on a dark background, styled like a helmet or wrist display)
+### hud.js (REMOVED Nov 14; kept for history)
 - Renders only while `state.mode === 'hud'` (and re-renders when the mode switches to HUD). Builds the SVG once and then updates attributes.
 - Arrow toward `sim.nextStop.bearingDeg` (or `sim.home.bearingDeg` in suit-only mode or while returning), the next stop's name, the
   distance left, and the ETA. Large readouts for **air left** and **time to walk home** with `air.level` coloring and a margin bar.
@@ -529,7 +558,7 @@ Wherever a budget number is shown while `effectiveBudget(...).demo` is true, it 
    credit), `literature`, `aiUse`, and `data.credits` (photo credits).
 5. Remove the "env.json missing" warning for real data (`env.missing` is false); keep it for `source === 'default'`.
 
-### hud.js + hud.css (HUD agent)
+### hud.js + hud.css (REMOVED Nov 14; kept for history)
 1. Budget: use `sim.air.budgetMin` / `effectiveBudget(state, config)`. While demo, show a small persistent
    "DEMO BUDGET 240" tag near the air readout (amber dashed, `--demo`), and the footnote reads
    "Budget 240 min: DEMO SETTING, not the real suit budget (real 480)". Otherwise "Budget 480 / reserve 30 min".
@@ -537,3 +566,37 @@ Wherever a budget number is shown while `effectiveBudget(...).demo` is true, it 
    or show the min/max range), dust word + τ, solar alert (DONKI) — e.g. "-16°C · DUST LOW τ0.34 · NO SOLAR ALERT".
    Storm / solar alert turns it red as now. Radiation is not needed on the HUD.
 3. Keep everything else. No FAKE tag for real data (it follows `data.fake`).
+
+## Additions (Nov 15): walk events, live detours, science prompts
+
+Everything above still holds. This section lists what was added since the HUD and DEMO console were removed.
+
+### New data files (all optional for app.js)
+
+| File | Written by | Shape | Read by |
+| --- | --- | --- | --- |
+| `walk_grid.json` | `pipeline/08_walk_grid.py` | `{ file: 'walk_time.bin', width: 1000, height: 1000, stride_px: 2, cell_m: 4.0, unit, source }` | app.js → `data.walkGrid` / `ctx.walkGrid` |
+| `walk_time.bin` | `pipeline/08_walk_grid.py` | uint8, row-major, width × height. Deciseconds to cross one 4 m cell along an axis at suited walking speed (slope, sand, roughness: the engine's time model); 255 = no-go (grown by the safety buffer) | pathfind.js via sim.js |
+| `route_science.json` | `pipeline/09_route_science.py` | `{ variants: { [variantId]: [{ id, px: [x, y], t_min, along_m, next_stop, kind: 'unit' \| 'mineral', from, to, run_m, title, prompt, source, confidence? }] }, sources, note, params }`. Real data: 5 prompts on `full`, 4 on `skipA` | science.js |
+
+Without `walk_grid.json`, the sim falls back to the precomputed `routes.json → hazard_demo` detour for the rock field, and crew-marked hazards get a warning but no detour. Without `route_science.json`, science.js returns null and does nothing.
+
+### sim.js: hazards and live detours
+
+- **Rock field** (`faults.hazard`, on at boot): when EV1 reaches the engine's trigger on A→B, `sim.hazard` is set and a `trigger: 'hazard'` proposal is made. The detour is live A* (`findDetour`) around the field plus a 30 m buffer, rejoining the route ahead; the walk pauses until `replan:confirm`.
+- **Marked hazards** (`hazard:mark`): a 40 m keep-out circle at the crew's position. Once the crew has walked clear of it, any later active route that comes within the look-ahead of a mark gets a `trigger: 'marked'` detour proposal (or a danger alert when no way around exists, or when the mark sits on a stop).
+- On confirm, the given-up path is appended to `sim.abandoned` and the new route becomes `active` with `kind: 'hazard'` (or the existing return kind on a way home).
+- `sim.radiation` and `sim.env.stormForecast` are documented in SimState above.
+
+### events.js: scripted walk events
+
+The events fire once per walk based on `state.sim`: the O2 pop-up (~T+0:14), pace recovery (~T+0:35), the storm pop-up on arrival at A, then toasts (dust devil at A, tubes loaded when leaving B, a storm check on the home leg, home before the deadline). Pop-ups use the shared `#event-pop` card in both views, pause the walk, and resume on Understood (or on Play). The storm is modeled on the real CME arrival that `pickModelCme(data.env)` picks from DONKI. Its ranking is: head-on beats glancing, full impact beats minor, then the earliest arrival. The forecast's timing is simulated, and every pop-up says so. A seek with `?t=` replays the conditions, so a deep link past T+0:14 opens the O2 pop-up unless `?events=0`.
+
+### science.js: science along the way
+
+A prompt fires when EV1 passes within 25 m of its point. Points are checked along the segment between frames, and only on the leg that heads to the prompt's `next_stop`. Each prompt fires once per walk as an info toast with `data-kind="science"` and a `.toast-src` source line. The walk never pauses. Toasts are spaced at least 2.5 s apart in real time, and a queued prompt more than 8 sim minutes old is dropped. Hexagon markers (`.sci-marker`, `.is-done` once fired) are drawn on the planner map for the route being planned or walked.
+
+### planner.js / tablet.js readers
+
+- planner.js shows the mission brief (idle only) and the safety strip chips (`chipsHtml(s)`): `STORM T+h:mm` from `sim.env.stormForecast`, `STORM NOW` from `sim.env.stormActive`, and the EVA dose from `sim.radiation`. The chips are patched in place only when their key changes, never every frame.
+- tablet.js shows "What you'll see" (`data.photosByStop`, the frame closest to the horizon from `data.raw.photos`), the dose line, the storm banner from `sim.env.stormForecast.deadlineT`, marks and abandoned paths on the mini map, and photo pins. Photos taken live only in tablet.js memory, not in state.
