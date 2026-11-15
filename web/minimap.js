@@ -15,12 +15,10 @@ export function createMiniMap(container, { url, widthPx, heightPx, pixelM = 2, l
   const svg = el('svg', { class: 'mm-svg', role: 'img', 'aria-label': label, preserveAspectRatio: 'xMidYMid slice' });
   el('rect', { x: -5000, y: -5000, width: 12000, height: 12000, class: 'mm-void' }, svg);
   const defs = el('defs', {}, svg);
-  // Rust tint as an SVG filter: Safari ignores CSS `filter` on SVG <image>, so the map stayed grey there.
-  // The HiRISE image is greyscale (r = g = b), so each row maps grey to a warm tone, like the planner's tint.
-  const tintId = `mmt-${Math.random().toString(36).slice(2, 8)}`;
-  const flt = el('filter', { id: tintId, 'color-interpolation-filters': 'sRGB' }, defs);
-  el('feColorMatrix', { type: 'matrix', values: '0.30 0.30 0.30 0 -0.02  0.23 0.23 0.23 0 -0.02  0.165 0.165 0.165 0 -0.02  0 0 0 1 0' }, flt);
-  el('image', { href: url, x: 0, y: 0, width: widthPx, height: heightPx, class: 'mm-base', preserveAspectRatio: 'none', filter: `url(#${tintId})` }, svg);
+  // Rust tint, baked ONCE into a copy of the basemap (see tintedBasemap). A live SVG/CSS filter re-rendered the
+  // whole 2000x2000 image every frame while the map followed the crew, which made motion choppy (worst in Safari).
+  const img = el('image', { x: 0, y: 0, width: widthPx, height: heightPx, class: 'mm-base', preserveAspectRatio: 'none' }, svg);
+  tintedBasemap(url).then((u) => img.setAttribute('href', u)).catch(() => img.setAttribute('href', url));
   const sp = 100 / pixelM;   // 100 m grid
   const pat = el('pattern', { id: `mmg-${Math.random().toString(36).slice(2, 8)}`, width: sp, height: sp, patternUnits: 'userSpaceOnUse' }, defs);
   el('path', { d: `M${sp} 0H0V${sp}`, class: 'mm-grid-line', 'vector-effect': 'non-scaling-stroke' }, pat);
@@ -88,4 +86,36 @@ export function createMiniMap(container, { url, widthPx, heightPx, pixelM = 2, l
       if (svg.getAttribute('viewBox') !== vb) svg.setAttribute('viewBox', vb);
     },
   };
+}
+
+// One tinted copy of the basemap per page, shared by every mini map. The HiRISE image is greyscale, so each
+// grey level maps to a warm rust tone (the same look as the planner's CSS tint on the Leaflet basemap).
+const tintCache = new Map();
+export function tintedBasemap(url) {
+  if (!tintCache.has(url)) {
+    tintCache.set(url, new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => {
+        try {
+          const c = document.createElement('canvas');
+          c.width = im.naturalWidth; c.height = im.naturalHeight;
+          const g = c.getContext('2d');
+          g.drawImage(im, 0, 0);
+          const d = g.getImageData(0, 0, c.width, c.height);
+          const p = d.data;
+          for (let i = 0; i < p.length; i += 4) {
+            const v = p[i];                                   // grey level (r = g = b)
+            p[i] = Math.min(255, v * 0.9 - 5);
+            p[i + 1] = Math.max(0, v * 0.69 - 5);
+            p[i + 2] = Math.max(0, v * 0.495 - 5);
+          }
+          g.putImageData(d, 0, 0);
+          c.toBlob((b) => (b ? resolve(URL.createObjectURL(b)) : reject(new Error('toBlob failed'))), 'image/jpeg', 0.9);
+        } catch (e) { reject(e); }
+      };
+      im.onerror = reject;
+      im.src = url;
+    }));
+  }
+  return tintCache.get(url);
 }

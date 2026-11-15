@@ -6,6 +6,7 @@
 
 import { fmtMin, fmtDistM, distM, esc, effectiveBudget, DEMO_BUDGET_NOTE } from './util.js';
 import { createMiniMap } from './minimap.js';
+import { createSmoother } from './smooth.js';
 
 const PX_PER_GRID = 2.3;          // screen px per grid px (2 m) at zoom 1: the map shows more ground on wider screens
 const TRIGGER_TITLE = {
@@ -119,6 +120,7 @@ export function initTablet(ctx) {
 
   let wayHome = false;
   let zoomF = 1;
+  const smooth = createSmoother();   // display-only: crew, rover and the map camera glide instead of jumping
   root.querySelector('.tbl-zoom').addEventListener('click', (e) => {
     const z = e.target.closest('[data-zoom]');
     if (!z) return;
@@ -307,17 +309,21 @@ export function initTablet(ctx) {
     const span = Math.max(160, Math.min(1400, mapW / PX_PER_GRID)) * zoomF;
     const scale = mapW / span;                              // screen px per grid px (viewBox fits the width)
     const shift = (colW / 2) / scale;
-    mm.view([ev.px[0] - shift, ev.px[1]], span);
+    const snap = !s.playing;
+    const evP = smooth('ev', ev.px, { snap });
+    const buddyP = smooth('buddy', buddy.px, { snap });
+    const roverP = rv?.px ? smooth('rover', rv.px, { snap }) : null;
+    mm.view([evP[0] - shift, evP[1]], span);
     mmTrail(sim.trail);
     mmRoute(sim.active?.path);
     mmProposed(sim.pendingReplan?.path || null);
     mmHome(homeMode ? (sim.home?.path || null) : null);
     f.mapNote.hidden = !homeMode;
     mmHazard(sim.hazard?.px || null, sim.hazard?.radiusPx || 0);
-    ring1(ev.px, ev.uncertaintyM / config.pixelM);
-    ev1(ev.px, 4.2);
-    ev2(buddy.px, 3.6);
-    rover(rv?.px || null);
+    ring1(evP, ev.uncertaintyM / config.pixelM);
+    ev1(evP, 4.2);
+    ev2(buddyP, 3.6);
+    rover(roverP);
     root.dataset.roverLink = rv?.linkOk ? 'ok' : 'lost';
     stopSetters.forEach(([st]) => {
       const g = f.map.querySelector(`.mm-stop-${st.kind || 'science'}`);

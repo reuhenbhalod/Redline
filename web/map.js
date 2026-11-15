@@ -5,6 +5,7 @@
 // setRadius / setStyle / class toggles) from the state subscriber, so the ~60 Hz sim
 // tick never re-creates Leaflet layers.
 
+import { createSmoother } from './smooth.js';
 import {
   pxToLatLng, latLngToPx, imageBounds, pathToLatLngs, lerpPx, clamp, esc, fmtDistM, fmtMinLong,
   pxToLonLat, fmtLonLat, basisLabel,
@@ -554,6 +555,36 @@ export function initMap(ctx) {
   const roverLink = L.polyline([], { ...crewOpt, color: C.rover, weight: 1.5, opacity: 0.5, dashArray: '3 4' });
   let roverOn = false;
 
+  // Sub-pixel dot layer for the moving crew and rover. Leaflet rounds marker positions to whole screen pixels,
+  // so at ~2 px of motion per frame the dots stepped 2-3-2-3 px and looked jittery. These elements live in the
+  // crew pane (so they pan with the map) and are placed with unrounded layer coordinates + translate3d.
+  // The Leaflet crew/rover markers above are kept only as position holders (never added to the map).
+  const dotLayer = L.DomUtil.create('div', 'map-dots', map.getPane('map-crew'));
+  const mkDot = (cls) => { const e = L.DomUtil.create('div', cls, dotLayer); e.style.display = 'none'; return e; };
+  const dots = {
+    ring: [mkDot('map-ring map-ring-1'), mkDot('map-ring map-ring-2')],
+    crew: [null, null],
+    rover: mkDot('map-dot map-dot-rover'),
+  };
+  dots.crew[1] = mkDot('map-dot map-dot-ev2');
+  dots.crew[0] = mkDot('map-dot map-dot-ev1');   // created last: EV1 draws on top of EV2
+  const dotPos = new Map();   // element -> { ll, rPx }
+  function placeDot(e, ll, rPx = null) {
+    dotPos.set(e, { ll, rPx });
+    const p = map.project(ll, map.getZoom()).subtract(map.getPixelOrigin());
+    if (rPx != null) {
+      const d = Math.max(2, 2 * rPx * map.getZoomScale(map.getZoom(), 0));
+      e.style.width = e.style.height = `${d}px`;
+    }
+    e.style.transform = `translate3d(${p.x}px, ${p.y}px, 0) translate(-50%, -50%)`;
+  }
+  const showDot = (e, on) => { const v = on ? '' : 'none'; if (e.style.display !== v) e.style.display = v; };
+  map.on('zoomanim', () => dotLayer.classList.add('is-zooming'));
+  map.on('zoomend viewreset', () => {
+    for (const [e, { ll, rPx }] of dotPos) placeDot(e, ll, rPx);
+    dotLayer.classList.remove('is-zooming');
+  });
+
   // ---------------------------------------------------------------- stops
   const stopMarkers = {};
   for (const st of data.stops) {
@@ -600,9 +631,12 @@ export function initMap(ctx) {
     if (!on && map.hasLayer(layer)) map.removeLayer(layer);
   }
 
+  const smooth = createSmoother();     // display-only smoothing of the moving markers (see smooth.js)
+  let lastLinkOk = null;
   function renderSim(s) {
     const sim = s.sim;
     const a = sim?.active;
+    const snap = !s.playing;            // paused / seeking: draw the exact sim positions
 
     // Active route: walked (dim) + remaining (bright). Color by kind.
     if (a && a.path?.length && sim.status !== 'idle') {
@@ -682,41 +716,48 @@ export function initMap(ctx) {
     // Crew dots + uncertainty rings (+ ghost at truePx while the link is lost).
     const showCrew = !!sim && Array.isArray(sim.crew) && sim.status !== 'idle';
     const linkOk = sim?.link?.ok !== false;
+    const linkChanged = linkOk !== lastLinkOk;
+    lastLinkOk = linkOk;
     sim?.crew?.slice(0, 2).forEach((c, i) => {
       const k = crew[i];
       if (!k || !c?.px) return;
-      const ll = pxToLatLng(c.px);
+      const ll = pxToLatLng(smooth(`crew${i}`, c.px, { snap }));
       k.dot.setLatLng(ll);
       k.ring.setLatLng(ll);
-      k.ring.setRadius(Math.max(0.5, (c.uncertaintyM || 0) / pixelM));
-      k.ring.setStyle({ color: linkOk ? crewColors[i] : C.danger, fillOpacity: linkOk ? 0.12 : 0.08, dashArray: linkOk ? null : '4 4' });
+      placeDot(dots.crew[i], ll);
+      placeDot(dots.ring[i], ll, Math.max(0.5, (c.uncertaintyM || 0) / pixelM));
       const ghost = !linkOk && c.truePx && !samePx(c.truePx, c.px);
       if (ghost) k.ghost.setLatLng(pxToLatLng(c.truePx));
       setVisible(k.ghost, ghost && showCrew);
     });
+    let shown = false;
     crew.forEach((k, i) => {
       const on = showCrew && !!sim.crew[i]?.px;
       if (on !== k.on) {
-        setVisible(k.ring, on); setVisible(k.dot, on);
+        showDot(dots.ring[i], on); showDot(dots.crew[i], on);
         if (!on) setVisible(k.ghost, false);
         k.on = on;
+        shown = true;
       }
     });
-    // Keep EV1 drawn on top of EV2.
-    if (showCrew) crew[0].dot.bringToFront();
+    if (linkChanged) dotLayer.classList.toggle('is-link-lost', !linkOk);
 
     // Rover.
     const r = sim?.rover;
     const roverVisible = showCrew && !!r?.px;
     if (roverVisible) {
-      rover.setLatLng(pxToLatLng(r.px));
-      rover.setStyle({ fillOpacity: r.linkOk === false ? 0.3 : 1, opacity: r.linkOk === false ? 0.4 : 1 });
-      if (sim.crew[0]?.px) roverLink.setLatLngs([pxToLatLng(sim.crew[0].px), pxToLatLng(r.px)]);
-      roverLink.setStyle({ opacity: r.linkOk === false ? 0 : 0.5 });
+      const rp = smooth('rover', r.px, { snap });
+      rover.setLatLng(pxToLatLng(rp));
+      placeDot(dots.rover, pxToLatLng(rp));
+      if (linkChanged || roverVisible !== roverOn) {
+        dots.rover.classList.toggle('is-off', r.linkOk === false);
+        roverLink.setStyle({ opacity: r.linkOk === false ? 0 : 0.5 });
+      }
+      if (sim.crew[0]?.px) roverLink.setLatLngs([crew[0].dot.getLatLng(), pxToLatLng(rp)]);   // tether from the drawn EV1 dot
     }
-    if (roverVisible !== roverOn) { setVisible(rover, roverVisible); setVisible(roverLink, roverVisible); roverOn = roverVisible; }
+    if (roverVisible !== roverOn) { showDot(dots.rover, roverVisible); setVisible(roverLink, roverVisible); roverOn = roverVisible; }
 
-    if (follow && showCrew && sim.crew[0]?.px) map.panTo(pxToLatLng(sim.crew[0].px), { animate: false });
+    if (follow && showCrew && sim.crew[0]?.px) map.panTo(crew[0].dot.getLatLng(), { animate: false });
 
     el.classList.toggle('map-link-lost', !!sim && !linkOk);
     el.classList.toggle('map-storm', !!sim?.env?.stormActive);
