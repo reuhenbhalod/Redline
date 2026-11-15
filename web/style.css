@@ -1,5 +1,5 @@
 /* style.css — design tokens, page layout, top bar, demo drawer, buttons, toasts, load error.
-   Owned by app.js. Module styling lives in map.css / panels.css / hud.css / tablet.css / rover.css.
+   Owned by app.js. Module styling lives in map.css / panels.css / planner.css / tablet.css / rover.css.
    Modules use these tokens (var(--...)) rather than hard-coded colors.
 
    Look ("field instrument", see docs/ui-redesign.md): warm charcoal, hairline panels, one teal signal
@@ -30,7 +30,7 @@
   --danger: #ff5a4f;
   --info: #8ab4ff;
 
-  /* Map / route roles (map.js, hud.js, tablet.js, rover.js) */
+  /* Map / route roles (map.js, tablet.js, rover.js) */
   --route-planned: #5eead4;     /* planned variant polyline */
   --route-alt: #b9aea2;         /* other variants, faint dashed */
   --route-active: #ffb547;      /* the route the crew is on now (after a replan) */
@@ -53,11 +53,6 @@
   /* Real-data map extras */
   --rover-path: #c4a7ff;
   --tube: #f4ede4;
-
-  /* HUD */
-  --hud-bg: #0d0b0a;
-  --hud-fg: #5eead4;
-  --hud-dim: #5d8d85;
 
   /* Map treatment: HiRISE tinted rust (basemap only, never the data overlays) */
   --map-tint: sepia(0.6) saturate(1.7) hue-rotate(-14deg) brightness(0.8) contrast(1.12);
@@ -243,10 +238,9 @@ select {
   border-left: 1px solid var(--border); padding: 14px;
 }
 /* Full-screen views fill the viewport below the top bar (sim controls stay usable via DEMO). */
-#hud, #tablet, #rover {
+#tablet, #rover {
   position: fixed; top: var(--topbar-h); left: 0; right: 0; bottom: 0; z-index: 900; overflow: hidden;
 }
-#hud { background: var(--hud-bg); color: var(--hud-fg); }
 #tablet, #rover { background: var(--bg); color: var(--text); }
 body:not([data-mode="planner"]) #planner { visibility: hidden; }
 
@@ -270,7 +264,7 @@ body:not([data-mode="planner"]) #planner { visibility: hidden; }
   position: fixed; right: calc(var(--panel-w) + 14px); bottom: 14px; z-index: 2000;
   display: flex; flex-direction: column; gap: 6px; max-width: 340px; pointer-events: none;
 }
-body[data-mode="hud"] #toasts, body[data-mode="tablet"] #toasts { display: none; }
+body[data-mode="tablet"] #toasts { display: none; }
 body[data-mode="rover"] #toasts { right: 14px; }
 @media (max-width: 760px) { #toasts { right: 14px; } }
 .toast {

@@ -5,7 +5,6 @@ import { fmtMin, effectiveBudget, DEMO_BUDGET_NOTE, assumptionBasis } from './ut
 import { initSim } from './sim.js';
 import { initMap } from './map.js';
 import { initPanels } from './panels.js';
-import { initHud } from './hud.js';
 import { initTablet } from './tablet.js';
 import { initRover } from './rover.js';
 import { initPlanner } from './planner.js';
@@ -314,7 +313,7 @@ function adaptEnv(envData, envLegacy) {
       : '';
     return {
       missing: false, source: 'env_data', fake: !!envData.fake,
-      // legacy keys (the old env.json shape; sim/hud/panels read these today)
+      // legacy keys (the old env.json shape; sim/panels read these today)
       dust: dustWord(tau),
       solar_alert: !!sw?.solar_alert,
       radiation_note: radNote,
@@ -516,7 +515,7 @@ function toggleKey(key) {
   }
 }
 
-export const MODES = ['planner', 'tablet', 'hud', 'rover'];
+export const MODES = ['planner', 'tablet', 'rover'];
 
 export function setMode(mode) {
   if (!MODES.includes(mode)) return;
@@ -606,8 +605,7 @@ function wireTopBar(config) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'select' || tag === 'textarea' || e.target.isContentEditable) return;
-    if (e.key === 'h' || e.key === 'H') { setMode(getState().mode === 'hud' ? 'planner' : 'hud'); e.preventDefault(); }
-    else if (e.key >= '1' && e.key <= '4') { setMode(MODES[Number(e.key) - 1]); e.preventDefault(); }
+    if (e.key >= '1' && e.key <= String(MODES.length)) { setMode(MODES[Number(e.key) - 1]); e.preventDefault(); }
     else if (e.key === 'd' || e.key === 'D') { setDrawer(drawer.hidden); e.preventDefault(); }
     else if (e.key === 'Escape' && !drawer.hidden) setDrawer(false);
     else if (e.key === 'Escape' && getState().mode !== 'planner') setMode('planner');
@@ -620,9 +618,14 @@ function wireTopBar(config) {
     const sim = s.sim;
     const awaiting = !!sim?.pendingReplan;
     const play = $('#btn-play');
-    play.textContent = s.playing ? 'Pause' : 'Play';
-    play.disabled = awaiting && !s.playing;
-    play.title = awaiting ? 'Confirm or review the reroute first' : 'Play / pause (space)';
+    // Only touch the button when something changed: rewriting its text 60x/s replaces the text node under the
+    // cursor, and Safari then drops the click (Pause appeared dead while the sim was running).
+    const playTxt = s.playing ? 'Pause' : 'Play';
+    if (play.textContent !== playTxt) play.textContent = playTxt;
+    const playDis = awaiting && !s.playing;
+    if (play.disabled !== playDis) play.disabled = playDis;
+    const playTitle = awaiting ? 'Confirm or review the reroute first' : 'Play / pause (space)';
+    if (play.title !== playTitle) play.title = playTitle;
     $('#sel-speed').value = String(s.speed);
     const b = effectiveBudget(s, config);
     const idle = (sim?.status ?? 'idle') === 'idle';
@@ -675,7 +678,6 @@ function wireTopBar(config) {
 function wireMode() {
   const apply = (mode) => {
     document.body.dataset.mode = mode;
-    $('#hud').hidden = mode !== 'hud';
     $('#tablet').hidden = mode !== 'tablet';
     $('#rover').hidden = mode !== 'rover';
   };
@@ -733,7 +735,6 @@ async function boot() {
     els: {
       map: $('#map'),
       sidePanel: $('#side-panel'),
-      hud: $('#hud'),
       tablet: $('#tablet'),
       rover: $('#rover'),
       toasts: $('#toasts'),
@@ -748,7 +749,7 @@ async function boot() {
     // The HUD has its own alert banner and replan card, and the planner shows the replan card in the
     // side panel, so sim alerts only toast in planner mode and replan proposals never toast.
     const m = getState().mode;
-    if (m === 'hud' || m === 'tablet' || a.kind === 'replan') return;
+    if (m === 'tablet' || a.kind === 'replan') return;
     toast({ level: a.level, title: a.title, text: a.text, timeoutMs: a.level === 'danger' ? 6000 : 4000 });
   });
 
@@ -756,7 +757,7 @@ async function boot() {
   wireTopBar(config);
 
   // sim first so state.sim exists before the views render; each init is isolated.
-  const inits = [['sim', initSim], ['map', initMap], ['panels', initPanels], ['hud', initHud],
+  const inits = [['sim', initSim], ['map', initMap], ['panels', initPanels],
     ['tablet', initTablet], ['rover', initRover], ['planner', initPlanner], ['demo', initDemo]];
   for (const [name, init] of inits) {
     try {

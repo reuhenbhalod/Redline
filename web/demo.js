@@ -57,8 +57,10 @@ export function initDemo(ctx) {
 
   function render(s) {
     const play = drawer.querySelector('[data-play]');
-    play.textContent = s.playing ? 'Pause' : 'Play';
-    play.disabled = !!s.sim?.pendingReplan && !s.playing;
+    const playTxt = s.playing ? 'Pause' : 'Play';                 // only on change (see app.js: Safari click bug)
+    if (play.textContent !== playTxt) play.textContent = playTxt;
+    const playDis = !!s.sim?.pendingReplan && !s.playing;
+    if (play.disabled !== playDis) play.disabled = playDis;
     drawer.querySelectorAll('[data-speed]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === s.speed)));
     drawer.querySelectorAll('[data-crew]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.crew) === (s.tabletCrew ?? 0))));
     const tEl = drawer.querySelector('[data-time]');

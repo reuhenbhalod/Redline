@@ -85,5 +85,7 @@ Revision 1 only restyled the existing planner, stop card and HUD. Revision 2 reb
 | Tablet | + crew switch, map zoom, link-lost button set (Start walking home / Wait for link / I see a landmark) |
 | Rover | + speed and tubes-loaded card (both derived from the sim) |
 
+**Nov 14 update:** the helmet HUD view was removed from the app (tab, console card, `hud.js`/`hud.css`).
+
 Not in the data, so not shown: rover battery (mockup placeholder), "Keep plan" on the reroute card (the sim has
 no reject event), rock-unit search in GO TO (no unit locations in the web data).
