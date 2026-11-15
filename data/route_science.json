@@ -1,0 +1,180 @@
+{
+ "variants": {
+  "full": [
+   {
+    "px": [
+     1141.0,
+     977.0
+    ],
+    "t_min": 12.06,
+    "along_m": 399.7,
+    "next_stop": "A",
+    "kind": "mineral",
+    "from": "High-Ca pyroxene",
+    "to": "Kaolinite",
+    "run_m": 145,
+    "title": "Orbital kaolinite signal",
+    "prompt": "Is the signal from bedrock or from loose light-toned pebbles? Photograph both. Kaolinite usually needs long leaching by water. (Orbital CRISM, medium confidence: verify on the ground.)",
+    "source": "Parente et al., CRISM dominant mineralogy of Jezero crater, Zenodo 5575824 (CC-BY-4.0); medium confidence",
+    "confidence": "medium",
+    "id": "full-1"
+   },
+   {
+    "px": [
+     726.3,
+     986.3
+    ],
+    "t_min": 44.22,
+    "along_m": 1346.5,
+    "next_stop": "A",
+    "kind": "unit",
+    "from": "Aeolian bedforms, large",
+    "to": "Delta thinly layered",
+    "run_m": 174,
+    "title": "Onto thinly layered delta rock",
+    "prompt": "Look for fine layering and grain-size changes; photograph a layer edge with a scale. Thin layers record how water flowed into the lake.",
+    "source": "Stack et al. 2020, Photogeologic map of the Perseverance rover field site, Space Sci. Rev. 216:127 (CC-BY-4.0)",
+    "id": "full-2"
+   },
+   {
+    "px": [
+     721.2,
+     986.8
+    ],
+    "t_min": 97.07,
+    "along_m": 1522.4,
+    "next_stop": "B",
+    "kind": "unit",
+    "from": "Delta thinly layered",
+    "to": "Aeolian bedforms, large",
+    "run_m": 68,
+    "title": "Crossing large wind ripples",
+    "prompt": "Photograph ripple crests and note their direction; check for coarse grains on the crests. Records today's winds.",
+    "source": "Stack et al. 2020, Photogeologic map of the Perseverance rover field site, Space Sci. Rev. 216:127 (CC-BY-4.0)",
+    "id": "full-3"
+   },
+   {
+    "px": [
+     818.0,
+     1077.0
+    ],
+    "t_min": 151.82,
+    "along_m": 1974.2,
+    "next_stop": "H",
+    "kind": "mineral",
+    "from": "High-Ca pyroxene",
+    "to": "Kaolinite",
+    "run_m": 42,
+    "title": "Orbital kaolinite signal again",
+    "prompt": "Compare with the earlier patch: same rock? Is the signal from bedrock or from loose light-toned pebbles? Photograph both. Kaolinite usually needs long leaching by water. (Orbital CRISM, high confidence: verify on the ground.)",
+    "source": "Parente et al., CRISM dominant mineralogy of Jezero crater, Zenodo 5575824 (CC-BY-4.0); high confidence",
+    "confidence": "high",
+    "id": "full-4"
+   },
+   {
+    "px": [
+     1142.0,
+     977.0
+    ],
+    "t_min": 173.47,
+    "along_m": 2694.2,
+    "next_stop": "H",
+    "kind": "mineral",
+    "from": "Kaolinite",
+    "to": "High-Ca pyroxene",
+    "run_m": 399,
+    "title": "Orbital pyroxene signal",
+    "prompt": "Note the rock texture (crystals, vesicles). Pyroxene marks volcanic rock: a baseline to compare with the water-altered rocks. (Orbital CRISM, medium confidence: verify on the ground.)",
+    "source": "Parente et al., CRISM dominant mineralogy of Jezero crater, Zenodo 5575824 (CC-BY-4.0); medium confidence",
+    "confidence": "medium",
+    "id": "full-5"
+   }
+  ],
+  "skipA": [
+   {
+    "px": [
+     1230.1,
+     929.8
+    ],
+    "t_min": 5.71,
+    "along_m": 185.9,
+    "next_stop": "B",
+    "kind": "unit",
+    "from": "Moderate Cover Us",
+    "to": "Undifferentiated smooth",
+    "run_m": 2167,
+    "title": "Back on the smooth crater floor",
+    "prompt": "Look for bedrock poking through the loose cover; photograph any exposed patch. Tells us what lies under the regolith.",
+    "source": "Stack et al. 2020, Photogeologic map of the Perseverance rover field site, Space Sci. Rev. 216:127 (CC-BY-4.0)",
+    "id": "skipA-1"
+   },
+   {
+    "px": [
+     834.2,
+     1065.8
+    ],
+    "t_min": 33.11,
+    "along_m": 1077.2,
+    "next_stop": "B",
+    "kind": "mineral",
+    "from": "High-Ca pyroxene",
+    "to": "Kaolinite",
+    "run_m": 42,
+    "title": "Orbital kaolinite signal",
+    "prompt": "Is the signal from bedrock or from loose light-toned pebbles? Photograph both. Kaolinite usually needs long leaching by water. (Orbital CRISM, high confidence: verify on the ground.)",
+    "source": "Parente et al., CRISM dominant mineralogy of Jezero crater, Zenodo 5575824 (CC-BY-4.0); high confidence",
+    "confidence": "high",
+    "id": "skipA-2"
+   },
+   {
+    "px": [
+     818.0,
+     1077.0
+    ],
+    "t_min": 83.45,
+    "along_m": 1420.2,
+    "next_stop": "H",
+    "kind": "mineral",
+    "from": "High-Ca pyroxene",
+    "to": "Kaolinite",
+    "run_m": 42,
+    "title": "Orbital kaolinite signal again",
+    "prompt": "Compare with the earlier patch: same rock? Is the signal from bedrock or from loose light-toned pebbles? Photograph both. Kaolinite usually needs long leaching by water. (Orbital CRISM, high confidence: verify on the ground.)",
+    "source": "Parente et al., CRISM dominant mineralogy of Jezero crater, Zenodo 5575824 (CC-BY-4.0); high confidence",
+    "confidence": "high",
+    "id": "skipA-3"
+   },
+   {
+    "px": [
+     1142.0,
+     977.0
+    ],
+    "t_min": 105.11,
+    "along_m": 2140.2,
+    "next_stop": "H",
+    "kind": "mineral",
+    "from": "Kaolinite",
+    "to": "High-Ca pyroxene",
+    "run_m": 399,
+    "title": "Orbital pyroxene signal",
+    "prompt": "Note the rock texture (crystals, vesicles). Pyroxene marks volcanic rock: a baseline to compare with the water-altered rocks. (Orbital CRISM, medium confidence: verify on the ground.)",
+    "source": "Parente et al., CRISM dominant mineralogy of Jezero crater, Zenodo 5575824 (CC-BY-4.0); medium confidence",
+    "confidence": "medium",
+    "id": "skipA-4"
+   }
+  ]
+ },
+ "sources": [
+  "Stack et al. 2020, Photogeologic map of the Perseverance rover field site, Space Sci. Rev. 216:127 (CC-BY-4.0)",
+  "Parente et al., CRISM dominant mineralogy of Jezero crater, Zenodo 5575824 (CC-BY-4.0)"
+ ],
+ "note": "Route-side observation prompts where the mapped rock/surface unit or the orbital mineral class changes along the planned path (runs under 40 m ignored, nothing within 60 m of a stop, CRISM 'unidentified', 'uncertain' and 'no coverage' never used). Orbital maps are tens of metres per pixel: each prompt is a suggestion to check on the ground, not a confirmed detection. Generated by pipeline/09_route_science.py.",
+ "params": {
+  "min_run_m": 40.0,
+  "smooth_m": 40.0,
+  "stop_skip_m": 60.0,
+  "max_per_route": 6,
+  "min_spacing_min": 15.0,
+  "repeat_gap_min": 45.0
+ }
+}

@@ -1292,12 +1292,32 @@ export function initSim(ctx) {
     const dust = data.env?.dust ?? 'unknown';
     const tau = data.env?.dustTau?.estimate;
     const dustTau = Number.isFinite(tau) ? tau : null;
-    const solarAlert = !!data.env?.solar_alert || !!f.storm;
+    // scripted (simulated) CME forecast written by events.js; undefined is treated as null
+    const sf = st().stormForecast;
+    const stormForecast = sf && Number.isFinite(sf.arrivalT) ? sf : null;
+    const solarAlert = !!data.env?.solar_alert || !!f.storm || !!stormForecast;
     const dustLevel = /high|severe|storm/i.test(dust) ? 'danger' : /moderate|medium/i.test(dust) ? 'warn' : 'ok';
     const envLevel = f.storm ? 'danger' : (solarAlert ? 'warn' : dustLevel === 'danger' ? 'warn' : dustLevel);
+    const dustText = `Dust ${dust}${dustTau != null ? ` (τ ${dustTau.toFixed(2)})` : ''}`;
+    const forecastText = stormForecast
+      ? `SOLAR STORM T+${fmtMin(stormForecast.arrivalT)}${Number.isFinite(stormForecast.deadlineT)
+        ? (S.status === 'done' ? ' · crew sheltered' : ` · inside by T+${fmtMin(stormForecast.deadlineT)}`) : ''}`
+      : null;
     const envText = f.storm
       ? (S.status === 'idle' ? 'STORM: EVA on hold' : finished() ? 'STORM: crew back at the habitat' : 'STORM: walk aborted, heading home')
-      : `Dust ${dust}${dustTau != null ? ` (τ ${dustTau.toFixed(2)})` : ''} · ${solarAlert ? 'SOLAR ALERT' : 'no solar alert'}`;
+      : `${dustText} · ${forecastText || (solarAlert ? 'SOLAR ALERT' : 'no solar alert')}`;
+
+    // radiation dose while outside: Curiosity RAD (Gale crater) daily rate as a stand-in for Jezero
+    const rad = data.env?.radiation;
+    const radRate = Number.isFinite(rad?.doseUGyPerDay) ? rad.doseUGyPerDay : null;
+    const outsideMin = S.status === 'idle' ? 0 : S.t;
+    const radiation = {
+      rateUGyPerDay: radRate,
+      evaDoseUGy: radRate != null ? radRate * outsideMin / 1440 : null,
+      source: radRate != null
+        ? 'Curiosity RAD, Gale crater (stand-in for Jezero); dose = daily rate × time outside'
+        : 'no radiation data',
+    };
 
     const visibleHomeMin = air.timeHomeMin;
     const B = bud();
@@ -1330,7 +1350,8 @@ export function initSim(ctx) {
         plannedReturnT: plannedVariant().est_min ?? (plannedVariant().t_min?.at(-1) ?? 0),
         projectedReturnT,
       },
-      env: { dust, dustTau, solarAlert, stormActive: !!f.storm, level: envLevel, text: envText },
+      env: { dust, dustTau, solarAlert, stormActive: !!f.storm, stormForecast, level: envLevel, text: envText },
+      radiation,
       link: { ok: S.link.ok, lostSinceT: S.link.lostSinceT },
       home: {
         px: homePx, bearingDeg: bearingDeg(ev1, homePx), straightM: distM(ev1, homePx, pixelM),
@@ -1483,6 +1504,7 @@ export function initSim(ctx) {
       hardReset();
       publish();
     }
+    if (changed.has('stormForecast')) publish();   // env chip/strip follow the scripted forecast at once (even paused)
     if (changed.has('demoBudgetMin')) {
       // the budget is read live through bud(): while idle this just rebuilds sim.air; after the start
       // (the select is disabled then) it applies from the next step, with no reset

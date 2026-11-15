@@ -114,6 +114,12 @@ export function initPlanner(ctx) {
       ctx.emit('map:focus', { px: JSON.parse(t.dataset.px), zoom: Number(t.dataset.zoom || 1) });
     } else if (act === 'skip' && idle) {
       ctx.setState({ plannedVariantId: t.dataset.id, selectedStopId: null });
+    } else if (act === 'why') {
+      whyOpen = !whyOpen;
+      t.setAttribute('aria-expanded', String(whyOpen));
+      t.querySelector('.sh-caret').textContent = whyOpen ? '▾' : '▸';
+      const body = t.closest('.sh-brief')?.querySelector('.sh-why-body');
+      if (body) body.hidden = !whyOpen;
     } else if (act === 'details') {
       details = !details;
       wrap.classList.toggle('show-details', details);
@@ -158,7 +164,7 @@ export function initPlanner(ctx) {
 
     const avoids = (v.why || []).filter((w) => /avoid|cuts/i.test(w)).slice(0, 3).map((w) => {
       const m = /^([^:]+):\s*(.*)$/.exec(w);
-      return `<li><span class="sh-tag">${esc(/cuts/i.test(w) ? 'Cuts' : 'Avoids')}</span>${esc(m ? `${m[2]} (${m[1]})` : w).replace(/^avoids |^cuts /i, '')}</li>`;
+      return `<li title="${esc(w)}"><span class="sh-tag">${esc(/cuts/i.test(w) ? 'Cuts' : 'Avoids')}</span>${esc(m ? `${m[2]} (${m[1]})` : w).replace(/^avoids |^cuts /i, '')}</li>`;
     }).join('');
 
     const others = data.routes.variants.filter((x) => x.id !== v.id).map((x) =>
@@ -167,10 +173,6 @@ export function initPlanner(ctx) {
         <span>Backup: ${esc(x.stops.join(' → '))}</span><span class="sh-mono">${esc((x.distance_m / 1000).toFixed(1))} KM · ${esc(fmtMin(x.est_min))}</span></button>`).join('');
 
     // safety strip
-    const env = data.env || {};
-    const tau = env.dustTau?.estimate;
-    const sw = env.spaceWeather;
-    const rad = env.radiation;
     const planW = Math.min(100, (v.est_min / b.budgetMin) * 100);
     const resW = (b.reserveMin / b.budgetMin) * 100;
 
@@ -178,6 +180,7 @@ export function initPlanner(ctx) {
       <div class="sh-head">
         <span class="sh-k">EVA 01 · 2 crew + rover · plan "${esc(v.id)}"</span>
         <h1 class="sh-title">${esc(variantTitle(v))}</h1>
+        ${idle ? briefHtml(v) : ''}
         <div class="sh-stats">
           <div><b>${esc(fmtMin(v.est_min))}</b><span>HRS</span></div>
           <div><b>${esc((v.distance_m / 1000).toFixed(1))}</b><span>KM</span></div>
@@ -192,11 +195,7 @@ export function initPlanner(ctx) {
         <div class="sh-sbar-labels"><span>SUIT ${esc(fmtMin(b.budgetMin))}${b.demo ? ' (DEMO)' : ''}</span><span>PLAN ${esc(fmtMin(v.est_min))}</span><span class="sh-amber">RESERVE ${esc(fmtMin(b.reserveMin))}</span></div>
         <div class="sh-sbar"><i style="width:${planW.toFixed(1)}%"></i><i class="sh-sbar-gap"></i><i class="sh-sbar-res" style="width:${resW.toFixed(1)}%"></i></div>
         ${b.demo ? `<span class="sh-demo">${esc(DEMO_BUDGET_NOTE)} (real ${esc(b.realBudgetMin)} min)</span>` : ''}
-        <div class="sh-chips">
-          <span><i class="${tau != null && tau < 0.6 ? 'ok' : 'warn'}"></i>DUST ${tau != null ? `τ${esc(tau.toFixed(2))}` : '?'}</span>
-          <span><i class="${sw?.solarAlert ? 'bad' : 'ok'}"></i>${sw?.solarAlert ? 'SOLAR ALERT' : 'NO CME DUE'}</span>
-          <span title="${esc(rad?.note || '')}"><i class="dim"></i>${rad?.doseUGyPerDay ? `${esc((rad.doseUGyPerDay / 1000).toFixed(2))} mGy/d` : 'RAD n/a'}</span>
-        </div>
+        <div class="sh-chips">${chipsHtml(s)}</div>
       </div>
       <button type="button" class="sh-details" data-act="details" aria-expanded="${details}">
         <span>Mission details: safety, environment, credits</span><span class="sh-caret">${details ? '▾' : '▸'}</span></button>`;
@@ -249,21 +248,99 @@ export function initPlanner(ctx) {
       </div>`;
   }
 
-  let lastKey = '';
+
+  // ------------------------------------------------------------------ mission brief (why this walk matters)
+  // Every claim here comes from data/stops.json (stop "why"/minerals, CRISM) and data/depot.json (PDS Three Forks
+  // depot bundle); the lines only appear when the planned variant actually visits that stop.
+  let whyOpen = false;
+  function briefHtml(v) {
+    const sci = v.stops.map((id) => data.stopsById[id]).find((st) => st?.kind === 'science');
+    const dep = v.stops.map((id) => data.stopsById[id]).find((st) => st?.kind === 'depot');
+    const tubes = data.depot?.tubes || [];
+    const lines = [];
+    if (sci) {
+      const cored = /cored (\w+)/i.exec(sci.why || '')?.[1];
+      const water = /clay/i.test(`${sci.why} ${sci.minerals}`);
+      lines.push(`<p class="sh-bl"><span class="sh-tag">Science</span>${water
+        ? `Delta clays formed in water can preserve signs of past life${cored ? `; Perseverance cored ${esc(cored)} here` : ''}`
+        : esc(sci.why || sci.name)}</p>`);
+    }
+    if (dep && tubes.length) {
+      const wit = tubes.filter((t) => /witness/i.test(t.name || '')).length;
+      lines.push(`<p class="sh-bl"><span class="sh-tag">Retrieve</span>${tubes.length} sample tubes${wit ? ` (${wit} witness)` : ''} Perseverance left at ${esc(dep.name.replace(/ depot$/i, ''))}</p>`);
+    }
+    if (!lines.length) return '';
+    const sols = tubes.map((t) => t.dropSol).filter(Number.isFinite);
+    const detail = [
+      sci?.why ? `<p>${esc(sci.why)}.</p>` : '',
+      sci?.minerals ? `<p><b>CRISM:</b> ${esc(sci.minerals)}</p>` : '',
+      dep && tubes.length ? `<p><b>Depot:</b> ${tubes.length} tubes${sols.length ? ` set down sols ${Math.min(...sols)}–${Math.max(...sols)}` : ''}; tube names and drop sols from the PDS depot bundle.</p>` : '',
+    ].join('');
+    return `<div class="sh-brief">${lines.join('')}
+      <div class="sh-bf"><button type="button" class="sh-why" data-act="why" aria-expanded="${whyOpen}">Why here <span class="sh-caret">${whyOpen ? '▾' : '▸'}</span></button>
+        <span class="sh-src" title="MRO CRISM mineral map; Mars 2020 PDS Three Forks sample depot bundle">Data: MRO CRISM · M2020 PDS</span></div>
+      <div class="sh-why-body" ${whyOpen ? '' : 'hidden'}>${detail}<span class="sh-src">Sources: data/stops.json (MRO CRISM, Mars 2020 sample record) · data/depot.json (PDS Three Forks depot bundle)</span></div></div>`;
+  }
+
+  // ------------------------------------------------------------------ safety chips (live: storm forecast, EVA dose)
+  function chipsKey(s) {
+    const e = s.sim?.env, r = s.sim?.radiation;
+    const sf = e?.stormForecast;
+    return [Number.isFinite(sf?.arrivalT) ? Math.round(sf.arrivalT) : '', e?.solarAlert ? 1 : 0, e?.stormActive ? 1 : 0,
+      Number.isFinite(r?.evaDoseUGy) ? Math.floor(r.evaDoseUGy / 10) : '', r?.rateUGyPerDay ?? ''].join('|');
+  }
+  function chipsHtml(s) {
+    const env = data.env || {};
+    const tau = env.dustTau?.estimate;
+    const sw = env.spaceWeather;
+    const se = s.sim?.env || {};
+    const sf = se.stormForecast && Number.isFinite(se.stormForecast.arrivalT) ? se.stormForecast : null;
+    const alert = !!(se.solarAlert || sw?.solarAlert);
+    const rad = env.radiation;
+    const sr = s.sim?.radiation || {};
+    const rate = Number.isFinite(sr.rateUGyPerDay) ? sr.rateUGyPerDay : Number.isFinite(rad?.doseUGyPerDay) ? rad.doseUGyPerDay : null;
+    const dose = Number.isFinite(sr.evaDoseUGy) && sr.evaDoseUGy > 0 ? sr.evaDoseUGy : null;
+    const solar = se.stormActive
+      ? `<span class="sh-chip-bad"><i class="bad"></i>STORM NOW</span>`
+      : sf
+        ? `<span class="sh-chip-warn" title="${esc(`Simulated CME forecast: arrival T+${fmtMin(sf.arrivalT)}${Number.isFinite(sf.deadlineT) ? `, crew inside by T+${fmtMin(sf.deadlineT)}` : ''}${sf.basedOn?.arrivalUtc ? ` (modeled on DONKI CME arrival ${sf.basedOn.arrivalUtc})` : ''}`)}"><i class="bad"></i>STORM T+${esc(fmtMin(sf.arrivalT))}</span>`
+        : `<span><i class="${alert ? 'bad' : 'ok'}"></i>${alert ? 'SOLAR ALERT' : 'NO CME DUE'}</span>`;
+    const radTitle = sr.source || rad?.note || '';
+    const radTxt = rate != null
+      ? `${(rate / 1000).toFixed(2)} mGy/d${dose != null ? ` · EVA ${(dose / 1000).toFixed(2)} mGy` : ''}`
+      : 'RAD n/a';
+    return `<span><i class="${tau != null && tau < 0.6 ? 'ok' : 'warn'}"></i>DUST ${tau != null ? `τ${esc(tau.toFixed(2))}` : '?'}</span>
+      ${solar}
+      <span class="${dose != null ? 'sh-chip-wide' : ''}" title="${esc(radTitle)}"><i class="dim"></i>${esc(radTxt)}</span>`;
+  }
+
+  let lastKey = '', lastChips = '';
   function renderSheet(s) {
     const sim = s.sim;
     const key = [s.selectedStopId, s.plannedVariantId, s.demoBudgetMin, sim?.status, (sim?.visited || []).join(), (sim?.dropped || []).join(), sim?.nextStop?.id].join('|');
-    if (key === lastKey) return;
+    if (key === lastKey) {
+      // only the live chips changed (storm forecast, EVA dose): patch them in place, keep scroll and focus
+      const ck = chipsKey(s);
+      if (ck !== lastChips) {
+        lastChips = ck;
+        const chips = sheet.querySelector('.sh-chips');
+        if (chips) chips.innerHTML = chipsHtml(s);
+      }
+      return;
+    }
     lastKey = key;
+    lastChips = chipsKey(s);
     sheet.dataset.view = s.selectedStopId ? 'stop' : 'route';
     sheet.innerHTML = s.selectedStopId && data.stopsById[s.selectedStopId] ? dossierHtml(s, s.selectedStopId) : sheetHtml(s);
     sheet.scrollTop = 0;
   }
 
   // Frame the planned route in the open map area between the rail and the sheet (the mockup's opening view).
+  let framed = false;
   function frameRoute() {
     const s = ctx.getState();
     if (s.mode !== 'planner' || s.selectedStopId) return;
+    framed = true;
     const v = data.variantsById[s.plannedVariantId] || data.routes.variants[0];
     const xs = v.path.map((p) => p[0]), ys = v.path.map((p) => p[1]);
     const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
@@ -281,6 +358,8 @@ export function initPlanner(ctx) {
   renderRail(ctx.getState());
   renderSheet(ctx.getState());
   ctx.subscribe((s, prev, changed) => {
+    // booted in tablet mode: frame the route the first time the planner is shown (after the map is resized)
+    if (changed.has('mode') && s.mode === 'planner' && !framed) setTimeout(() => requestAnimationFrame(frameRoute), 0);
     if (changed.has('layersOn') || changed.has('roverPathOn') || changed.has('depotOn')) renderRail(s);
     if (changed.has('sim') || changed.has('selectedStopId') || changed.has('plannedVariantId') || changed.has('demoBudgetMin')) renderSheet(s);
   });

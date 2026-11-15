@@ -56,12 +56,24 @@ export function initTablet(ctx) {
         </div>
         <div class="tbl-bar" aria-hidden="true"><i data-f="barLeft"></i><i data-f="barReserve"></i></div>
         <div class="tbl-row"><span class="tbl-dim tbl-small" data-f="budget"></span><span data-f="margin"></span></div>
+        <span class="tbl-dose" data-f="dose" title="Simulated: dose rate from Curiosity's RAD at Gale crater (MSL RAD RDR), used as a stand-in for Jezero" hidden></span>
       </div>
 
       <div class="tbl-card tbl-route">
         <div class="tbl-row"><span class="tbl-k">Route</span><span class="tbl-k" data-f="routeEta"></span></div>
         <ol class="tbl-steps" data-f="steps"></ol>
         <div class="tbl-prog" aria-hidden="true"><i data-f="prog"></i></div>
+      </div>
+
+      <div class="tbl-card tbl-pov" data-f="povCard" hidden>
+        <button type="button" class="tbl-pov-btn" data-f="povBtn" aria-expanded="false" aria-label="Show the photo larger">
+          <img class="tbl-pov-img" data-f="povImg" alt="" decoding="async">
+          <span class="tbl-pov-txt">
+            <span class="tbl-k" data-f="povLabel">What you'll see</span>
+            <span class="tbl-pov-cap" data-f="povCap"></span>
+            <span class="tbl-pov-credit" data-f="povCredit"></span>
+          </span>
+        </button>
       </div>
 
       <div class="tbl-card tbl-rover" data-f="roverCard">
@@ -92,6 +104,11 @@ export function initTablet(ctx) {
       ${btn('wait', 'wait', 'Wait for link')}
       ${btn('landmark', 'pin', 'I see a landmark')}
     </div>
+    <div class="tbl-pov-big" data-f="povBig" hidden>
+      <img data-f="povBigImg" alt="">
+      <div class="tbl-row"><span class="tbl-pov-cap" data-f="povBigCap"></span><button type="button" class="tbl-pov-close" data-f="povClose" aria-label="Close photo">×</button></div>
+      <span class="tbl-pov-credit" data-f="povBigCredit"></span>
+    </div>
     <div class="tbl-takeover" data-f="replan" hidden></div>`;
 
   const f = Object.fromEntries([...root.querySelectorAll('[data-f]')].map((n) => [n.dataset.f, n]));
@@ -111,6 +128,9 @@ export function initTablet(ctx) {
   const mmMarkZones = [0, 1, 2, 3, 4, 5].map(() => mm.circle('mm-mark-zone'));
   const mmMarkPins = [0, 1, 2, 3, 4, 5].map(() => mm.circle('mm-mark'));
   const stopSetters = data.stops.map((st) => [st, mm.diamond(`mm-stop mm-stop-${st.kind || 'science'}`, st.id, 16)]);
+  const PHOTO_PINS = 12;                                   // photos taken on this walk (newest kept)
+  const mmPhotoRings = Array.from({ length: PHOTO_PINS }, () => mm.circle('mm-photo'));
+  const mmPhotoDots = Array.from({ length: PHOTO_PINS }, () => mm.square('mm-photo-dot', 4));
   const ring1 = mm.circle('mm-ring');
   const rover = mm.square('mm-rover', 9);
   const ev2 = mm.circle('mm-ev2');
@@ -118,6 +138,8 @@ export function initTablet(ctx) {
   stopSetters.forEach(([st, s]) => s(st.px));
 
   let wayHome = false;
+  const photosTaken = [];                                   // { t, px, crew } recorded by "Take photo"
+
   let zoomF = 1;
   const smooth = createSmoother();   // display-only: crew, rover and the map camera glide instead of jumping
   root.querySelector('.tbl-zoom').addEventListener('click', (e) => {
@@ -148,7 +170,13 @@ export function initTablet(ctx) {
       ctx.emit('hazard:mark');
       ctx.toast({ level: 'warn', title: 'Hazard marked', text: `Pinned at your position ${at}; shared with the rover and your buddy. Routes will now keep 40 m clear of it.` });
     } else if (act === 'photo') {
-      ctx.toast({ level: 'ok', title: 'Photo saved', text: `Tagged with position and time ${at} (demo).` });
+      if (me?.px && sim) {
+        photosTaken.push({ t: sim.t, px: [me.px[0], me.px[1]], crew: me.id });
+        if (photosTaken.length > PHOTO_PINS) photosTaken.shift();
+      }
+      const n = photosTaken.length;
+      ctx.toast({ level: 'ok', title: 'Photo saved', text: `Tagged with position and time ${at} (demo). ${n ? `Photo ${n} of this walk, pinned on your map.` : ''}`.trim() });
+      render(ctx.getState(), true);
     } else if (act === 'home') {
       wayHome = !wayHome;
       b.setAttribute('aria-pressed', String(wayHome));
@@ -210,6 +238,91 @@ export function initTablet(ctx) {
     set('routeEta', `Back T+${fmtMin(end)}`);
   }
 
+  // ---- "What you'll see": a real Perseverance image of the stop ahead (or the one being worked)
+  const CAMERA = { MCZ_LEFT: 'Mastcam-Z', MCZ_RIGHT: 'Mastcam-Z', NAVCAM_LEFT: 'Navcam', NAVCAM_RIGHT: 'Navcam',
+    FRONT_HAZCAM_LEFT_A: 'Hazcam', FRONT_HAZCAM_RIGHT_A: 'Hazcam' };
+  const povCache = {};                                      // stopId -> chosen photo (or null)
+  const povFailed = new Set();                              // stop ids whose image failed to load
+  let povStop = null, povBigOpen = false;
+  function pickPhoto(id) {
+    if (id in povCache) return povCache[id];
+    const ph = data.photosByStop?.[id];
+    const cands = (ph?.candidates || []).filter((c) => c.url);
+    let pick = null;
+    if (cands.length) {
+      // point of view: prefer a frame looking near the horizon (what a walker sees), else the first one
+      // (mast elevation is only in the raw photos.json, matched by image id; no elevation -> keep the data's order)
+      const elById = new Map((data.raw?.photos?.[id]?.candidates || []).map((r) => [r.imageid, Number(r.mast_el_deg)]));
+      const off = (c) => { const v = elById.get(c.imageId); return Number.isFinite(v) ? Math.abs(v + 5) : 90; };
+      const c = cands.reduce((a, x) => (off(x) < off(a) ? x : a), cands[0]);
+      const cam = CAMERA[c.camera] || 'rover camera';
+      const nearby = /no rover images/i.test(ph.note || '');
+      pick = {
+        thumb: c.thumb || c.url, big: c.url,
+        caption: `${nearby ? 'Nearby view, similar terrain · ' : ''}Perseverance ${cam}${c.sol != null ? `, sol ${c.sol}` : ''}`,
+        credit: c.credit || 'NASA/JPL-Caltech',
+      };
+    } else {
+      // featured images (or, with old data, the stop's own photo URLs, which have no captions): prefer raw rover frames
+      const feats = (ph?.featured || []).filter((x) => x.url && !/orbital/i.test(x.url));
+      const fe = feats.find((x) => /mars2020-raw-images/.test(x.url)) || feats[0];
+      if (fe) {
+        const sol = fe.url.match(/\/sol\/0*(\d+)\//)?.[1];
+        const zcam = /\/zcam\//.test(fe.url);
+        pick = {
+          thumb: zcam ? fe.url.replace(/_1200\.jpg$/, '_320.jpg') : fe.url, big: fe.url,
+          caption: fe.caption || (zcam ? `Perseverance Mastcam-Z${sol ? `, sol ${sol}` : ''}` : 'Perseverance image'),
+          credit: fe.credit || (zcam ? 'NASA/JPL-Caltech/ASU' : 'NASA/JPL-Caltech'),
+        };
+      }
+    }
+    povCache[id] = pick;
+    return pick;
+  }
+  function hidePov() {
+    f.povCard.hidden = true;
+    f.povBig.hidden = true;
+    povBigOpen = false;
+    f.povBtn.setAttribute('aria-expanded', 'false');
+    f.roverCard.classList.remove('is-compact', 'is-quiet');
+  }
+  f.povImg.addEventListener('error', () => { if (povStop) povFailed.add(povStop); hidePov(); });
+  f.povBigImg.addEventListener('error', () => { f.povBig.hidden = true; povBigOpen = false; });
+  f.povBtn.addEventListener('click', () => {
+    povBigOpen = !povBigOpen;
+    if (povBigOpen && povStop && !f.povBigImg.getAttribute('src')) f.povBigImg.src = pickPhoto(povStop)?.big || '';
+    f.povBig.hidden = !povBigOpen;
+    f.povBtn.setAttribute('aria-expanded', String(povBigOpen));
+  });
+  f.povClose.addEventListener('click', () => { povBigOpen = false; f.povBig.hidden = true; f.povBtn.setAttribute('aria-expanded', 'false'); });
+  function renderPov(sim, linkOk, storm) {
+    let id = null, label = '';
+    const live = linkOk && !storm && !sim.pendingReplan;
+    if (live && sim.status === 'working' && sim.working) { id = sim.working.stopId; label = 'Around you now'; }
+    else if (live && sim.status === 'walking' && sim.nextStop) {
+      const n = sim.nextStop;
+      const soonMin = n.etaT != null ? n.etaT - sim.t : Infinity;
+      if ((n.distanceM ?? Infinity) <= 400 || soonMin <= 12) { id = n.id; label = `What you'll see · ${n.id === 'H' ? 'Habitat' : `Stop ${n.id}`}`; }
+    }
+    const pick = id && !povFailed.has(id) ? pickPhoto(id) : null;
+    if (!pick) { if (!f.povCard.hidden) hidePov(); povStop = id && povFailed.has(id) ? id : null; return; }
+    if (id !== povStop) {                                   // swap the image only when the stop changes
+      povStop = id;
+      f.povImg.src = pick.thumb;
+      f.povImg.alt = pick.caption;
+      f.povBigImg.removeAttribute('src');
+      f.povBigImg.alt = pick.caption;
+      set('povCap', pick.caption); set('povCredit', pick.credit);
+      set('povBigCap', pick.caption); set('povBigCredit', pick.credit);
+      if (povBigOpen) f.povBigImg.src = pick.big;
+    }
+    set('povLabel', label);
+    f.povCard.hidden = false;
+    // make room: the rover card drops its status line while the photo shows (unless the rover has found a hazard)
+    f.roverCard.classList.add('is-compact');
+    f.roverCard.classList.toggle('is-quiet', !sim.hazard);
+  }
+
   // ---- main render
   function render(s, force = false) {
     if (s.mode !== 'tablet' && !force) return;
@@ -221,13 +334,17 @@ export function initTablet(ctx) {
     const ci = Math.min(sim.crew.length - 1, Math.max(0, s.tabletCrew ?? 0));
     const ev = sim.crew[ci];
     const buddy = sim.crew[1 - ci] || sim.crew[0];
+    const sf = sim.env?.stormForecast;
+    const sfD = sf ? Number(sf.deadlineT ?? sf.insideByT ?? sf.beInsideByT ?? sf.deadline) : NaN;
+    const stormDeadline = Number.isFinite(sfD) ? sfD : null;
 
     // chips
     root.dataset.link = linkOk ? 'ok' : 'lost';
     set('who', ev.label || ev.id);
     set('link', linkOk ? 'Rover link' : 'Rover link lost');
     set('buddy', `Buddy ${buddy.label || buddy.id} · ${fmtDistM(distM(ev.px, buddy.px, config.pixelM))}`);
-    set('env', sim.env?.text || '');
+    // the storm deadline already has its own banner and top-bar chip: keep the env chip on one row (1190 px)
+    set('env', (sim.env?.text || '').replace(/ · (inside by T\+[\d:]+|crew sheltered)$/, ''));
     f.actions.hidden = !linkOk;
     f.lostActions.hidden = linkOk;
 
@@ -238,6 +355,11 @@ export function initTablet(ctx) {
     else if (sim.active?.kind === 'hazard' && !sim.pendingReplan && sim.status !== 'done') { banner = `${sim.active.label} · old route in red`; level = 'warn'; }
     else if (sim.air?.level === 'danger') { banner = 'Air margin critical · turn around'; level = 'danger'; }
     else if (sim.air?.level === 'warn') { banner = 'Air margin getting short'; level = 'warn'; }
+    else if (stormDeadline != null && sim.status !== 'idle') {
+      const left = stormDeadline - sim.t;
+      if (sim.status === 'done') { banner = 'Solar storm · crew sheltered'; level = 'ok'; }
+      else { banner = left > 0 ? `Solar storm · be inside by T+${fmtMin(stormDeadline)} (in ${fmtMin(left)})` : `Solar storm · deadline T+${fmtMin(stormDeadline)} passed · get inside`; level = left > 30 ? 'warn' : 'danger'; }
+    }
     f.banner.hidden = !banner;
     if (banner) { set('banner', banner); f.banner.dataset.level = level; }
 
@@ -289,6 +411,10 @@ export function initTablet(ctx) {
     f.barReserve.style.width = `${(res * 100).toFixed(1)}%`;
     set('margin', `Margin ${fmtMin(air.marginMin)}`);
     f.margin.dataset.level = air.level || 'ok';
+    const dose = Number(sim.radiation?.evaDoseUGy);
+    const showDose = Number.isFinite(dose) && sim.status !== 'idle';
+    if (f.dose.hidden === showDose) f.dose.hidden = !showDose;
+    if (showDose) set('dose', `Dose this EVA ${dose < 100 ? `${Math.round(dose)} µGy` : `${(dose / 1000).toFixed(dose < 10000 ? 2 : 1)} mGy`} · simulated`);
     set('budget', air.budgetDemo ? `DEMO BUDGET ${Math.round(budgetMin)} MIN (${DEMO_BUDGET_NOTE})` : `Suit ${fmtMin(budgetMin)} · reserve ${fmtMin(air.reserveMin ?? b.reserveMin)}`);
 
     // rover card
@@ -332,6 +458,10 @@ export function initTablet(ctx) {
     mmRoute(sim.active?.path);
     mmPendingAbandoned(pr?.abandoned?.length > 1 ? pr.abandoned : null);
     mmProposed(pr?.path || null);
+    const shots = photosTaken.filter((p) => p.t <= sim.t + 1e-6);   // a replay or seek back hides later photos
+    if (shots.length !== photosTaken.length) photosTaken.splice(0, photosTaken.length, ...shots);
+    mmPhotoRings.forEach((c, i) => c(photosTaken[i]?.px || null, 4.5));
+    mmPhotoDots.forEach((sq, i) => sq(photosTaken[i]?.px || null));
     const marks = sim.marks || [];
     mmMarkZones.forEach((c, i) => c(marks[i]?.px || null, marks[i]?.radiusPx || 0));
     mmMarkPins.forEach((c, i) => c(marks[i]?.px || null, 5));
@@ -361,6 +491,7 @@ export function initTablet(ctx) {
     if (pauseBtn.disabled !== !!sim.pendingReplan) pauseBtn.disabled = !!sim.pendingReplan;
 
     renderRoute(s, sim);
+    renderPov(sim, linkOk, storm);
     renderReplan(sim.pendingReplan);
   }
 

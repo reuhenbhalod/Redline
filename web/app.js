@@ -8,6 +8,7 @@ import { initPanels } from './panels.js';
 import { initTablet } from './tablet.js';
 import { initPlanner } from './planner.js';
 import { initEvents } from './events.js';
+import { initScience } from './science.js';
 import { parseWalkGrid } from './pathfind.js';
 
 // ---------------------------------------------------------------------------
@@ -648,6 +649,7 @@ async function boot() {
     roverPathOn: false,     // map.js: Perseverance's real traverse overlay
     tabletCrew: 0,          // tablet.js: which crew member's tablet is shown (0 = EV1, 1 = EV2); demo console writes it
     depotOn: true,          // map.js: the 10 depot tubes
+    scienceLog: [],         // science.js: route-side science prompts fired this walk
     sim: null, // written only by sim.js (see INTERFACES.md "state.sim")
   };
 
@@ -685,7 +687,7 @@ async function boot() {
 
   // sim first so state.sim exists before the views render; each init is isolated.
   const inits = [['sim', initSim], ['map', initMap], ['panels', initPanels],
-    ['tablet', initTablet], ['planner', initPlanner], ['events', initEvents]];
+    ['tablet', initTablet], ['planner', initPlanner], ['events', initEvents], ['science', initScience]];
   for (const [name, init] of inits) {
     try {
       ctx.modules[name] = (await init(ctx)) ?? null;

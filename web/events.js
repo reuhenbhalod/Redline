@@ -4,7 +4,7 @@
 // slowPace), so air and pace really change. Restart clears everything. ?events=0 turns the script off (testing).
 //
 //  ~T+0:06  suit O2 use climbs on the ascent (faults.highAir on, silently: the cause)
-//  ~T+0:14  POP-UP  High O2 use: slow down and conserve  -> on Understood: highAir off, slowPace on
+//  ~T+0:14  POP-UP  High O2 use (simulated suit telemetry): slow down and conserve  -> on Understood: highAir off, slowPace on
 //  ~T+0:35  pace back to normal (slowPace off)
 //  arrive A POP-UP  Solar storm forecast in 3 h: be home by the deadline -> storm countdown chip in the top bar
 //  at A     toast   dust devil sighted, drifting away
@@ -18,10 +18,30 @@ import { fmtMin } from './util.js';
 const STORM_LEAD_MIN = 180;        // CME forecast to arrive 3 h after the alert
 const SHELTER_MARGIN_MIN = 30;     // be inside this long before arrival
 
+// The scripted storm is modeled on a REAL Mars CME arrival from env_data.json (NASA DONKI, WSA-ENLIL runs):
+// the strongest one in the 30-day window (head-on over glancing, full over minor impact, then the earliest).
+export function pickModelCme(env) {
+  const list = env?.spaceWeather?.cmeArrivals30d || [];
+  const score = (a) => (a.glancingBlow ? 0 : 2) + (a.minorImpact ? 0 : 1);
+  let best = null;
+  for (const a of list) {
+    if (!a?.arrivalUtc) continue;
+    if (!best || score(a) > score(best) || (score(a) === score(best) && a.arrivalUtc < best.arrivalUtc)) best = a;
+  }
+  return best;
+}
+function fmtUtcDate(iso) {
+  const d = new Date(String(iso));
+  if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10);
+  const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()];
+  return `${d.getUTCDate()} ${mon} ${d.getUTCFullYear()}`;
+}
+
 export function initEvents(ctx) {
   const params = new URLSearchParams(location.search);
   if (params.get('events') === '0') return null;
-  const { data } = ctx;
+  const { data, config } = ctx;
+  const modelCme = pickModelCme(data.env);
   const pop = document.getElementById('event-pop');
   const chip = document.getElementById('storm-chip');
   if (!pop) return null;
@@ -31,12 +51,14 @@ export function initEvents(ctx) {
   let stormDeadline = null;                        // sim minutes
   let queue = [];
   let showing = null;
+  let lastT = null;                                // detects seeks (?t= deep links): events already passed are skipped silently
 
   const setFaults = (patch) => ctx.setState({ faults: { ...ctx.getState().faults, ...patch } });
 
   function resetRun() {
     fired = new Set();
     stormDeadline = null;
+    if (ctx.getState().stormForecast) ctx.setState({ stormForecast: null });
     queue = []; hidePop();
     chip.hidden = true;
     const patch = {};
@@ -87,8 +109,10 @@ export function initEvents(ctx) {
   function check(s) {
     const sim = s.sim;
     if (!sim) return;
-    if (sim.status === 'idle' && sim.t === 0) { if (fired.size || ours.highAir || ours.slowPace) resetRun(); return; }
-    const once = (id, cond, fn) => { if (!fired.has(id) && cond) { fired.add(id); fn(); } };
+    if (sim.status === 'idle' && sim.t === 0) { lastT = 0; if (fired.size || ours.highAir || ours.slowPace) resetRun(); return; }
+    const jumped = lastT != null && Math.abs(sim.t - lastT) > 5;   // a seek, not live play (600x moves < 3 min per frame)
+    lastT = sim.t;
+    const once = (id, cond, fn) => { if (!fired.has(id) && cond) { fired.add(id); if (!jumped) fn(); } };
     const visited = sim.visited || [];
     const atA = visited.includes('A');
 
@@ -98,11 +122,15 @@ export function initEvents(ctx) {
     });
     once('o2-alert', sim.t >= 14 && !atA && sim.status === 'walking', () => {
       const air = sim.air || {};
+      // burn and pace factors are the sim's own (DEMO) settings; air left is the sim's live value
+      const burn = Number.isFinite(air.burnFactor) && air.burnFactor > 1 ? air.burnFactor : (config?.highAirBurnFactor ?? null);
+      const slow = config?.slowPaceFactor ?? null;
+      const burnTxt = burn != null ? `${burn}× plan` : 'above plan';
       popup({
-        level: 'warn', kicker: `Suit · EV1 · T+${fmtMin(sim.t)}`,
+        level: 'warn', kicker: `Suit · EV1 · T+${fmtMin(sim.t)} · simulated suit telemetry`,
         title: 'High oxygen use: slow down and conserve',
-        text: 'You are working too hard on the climb toward the delta. Oxygen use is about 1.4× the plan and your heart rate is up. Slow your pace and keep your breathing steady; the route waits for you.',
-        facts: [['O₂ use', '1.4× plan'], ['Heart rate', '148 bpm'], ['Air left', fmtMin(air.leftMin)], ['Pace after this', '0.8× (slower)']],
+        text: `Simulated suit telemetry: you are working too hard on the climb toward the delta and oxygen use is ${burn != null ? `about ${burn}×` : 'above'} the plan (a demo setting, not a measurement). Slow your pace and keep your breathing steady; the route waits for you.`,
+        facts: [['O₂ use (simulated)', burnTxt], ['Air left (sim)', fmtMin(air.leftMin)], ['Pace after this', slow != null ? `${slow}× (slower)` : 'slower']],
         onAck: () => {
           const patch = { slowPace: true };
           if (ours.highAir) { patch.faults = { ...ctx.getState().faults, highAir: false }; ours.highAir = false; }
@@ -119,21 +147,36 @@ export function initEvents(ctx) {
 
     // 2. Solar storm forecast on arrival at the first stop
     once('storm', atA, () => {
-      stormDeadline = sim.t + STORM_LEAD_MIN - SHELTER_MARGIN_MIN;
+      const arrivalT = sim.t + STORM_LEAD_MIN;
+      stormDeadline = arrivalT - SHELTER_MARGIN_MIN;
       const back = sim.schedule?.projectedReturnT;
       const ok = back != null && back <= stormDeadline;
+      const cmeDate = modelCme ? fmtUtcDate(modelCme.arrivalUtc) : null;
+      ctx.setState({
+        stormForecast: {
+          arrivalT, deadlineT: stormDeadline,
+          basedOn: modelCme ? {
+            arrivalUtc: modelCme.arrivalUtc, cmeId: modelCme.cmeIds?.[0] || '', link: modelCme.link || '',
+            simulation: modelCme.simulation || '', glancingBlow: !!modelCme.glancingBlow, minorImpact: !!modelCme.minorImpact,
+          } : null,
+        },
+      });
+      const basis = modelCme
+        ? ` Modeled on the real CME that NASA DONKI (WSA-ENLIL) had reaching Mars on ${cmeDate}; timing here is simulated.`
+        : ' Timing and strength are simulated.';
       popup({
         level: 'danger', kicker: `Space weather · T+${fmtMin(sim.t)} · simulated forecast`,
         title: 'Solar storm in 3 hours: be back by then',
-        text: `A coronal mass ejection is forecast to reach Mars at T+${fmtMin(sim.t + STORM_LEAD_MIN)}. Its radiation makes the surface unsafe, so the crew must be inside the habitat by T+${fmtMin(stormDeadline)} (${SHELTER_MARGIN_MIN} min shelter margin). ${ok ? 'The current plan gets you home in time.' : 'The current plan runs past the deadline: shorten the walk.'}`,
-        facts: [['Storm arrives', `T+${fmtMin(sim.t + STORM_LEAD_MIN)}`], ['Be inside by', `T+${fmtMin(stormDeadline)}`], ['Plan home at', back != null ? `T+${fmtMin(back)}` : '—'], ['Status', ok ? 'On track' : 'Too late']],
+        text: `A coronal mass ejection is forecast to reach Mars at T+${fmtMin(arrivalT)}. Its radiation makes the surface unsafe, so the crew must be inside the habitat by T+${fmtMin(stormDeadline)} (${SHELTER_MARGIN_MIN} min shelter margin). ${ok ? 'The current plan gets you home in time.' : 'The current plan runs past the deadline: shorten the walk.'}${basis}`,
+        facts: [['Storm arrives', `T+${fmtMin(arrivalT)}`], ['Be inside by', `T+${fmtMin(stormDeadline)}`], ['Plan home at', back != null ? `T+${fmtMin(back)}` : '—'], ['Status', ok ? 'On track' : 'Too late'],
+          ...(modelCme ? [['Modeled on', `${cmeDate} arrival (NASA DONKI, WSA-ENLIL)`]] : [])],
         onAck: () => { chip.hidden = false; },
       });
     });
 
     // 3. Dust devil while working at A
     once('dust-devil', sim.status === 'working' && sim.working?.stopId === 'A' && sim.working.leftMin <= 25, () => {
-      toast('info', 'Dust devil sighted 400 m east', 'Drifting north, away from you. No action needed; keep visors down and stay clear of its path.');
+      toast('info', 'Dust devil sighted 400 m east (simulated)', 'Drifting north, away from you. No action needed; keep visors down and stay clear of its path.');
     });
 
     // 4. Sample tubes loaded when leaving the depot
