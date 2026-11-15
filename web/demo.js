@@ -30,8 +30,9 @@ export function initDemo(ctx) {
       if (st) setTimeout(() => ctx.emit('map:focus', { px: st.px, zoom: 1 }), 0);
     }
     if (t.dataset.goto) {
-      // app.js has already toggled the key; jump to the view that shows the effect when it was turned ON
-      if (t.getAttribute('aria-pressed') !== 'true' && readToggle(ctx.getState(), t.dataset.toggle)) {
+      // app.js's listener ran first and already flipped the key, so the state now holds the NEW value:
+      // jump to the view that shows the effect when the scenario was just turned ON
+      if (readToggle(ctx.getState(), t.dataset.toggle)) {
         ctx.setMode(t.dataset.goto);
         close();
       }
@@ -57,8 +58,10 @@ export function initDemo(ctx) {
 
   function render(s) {
     const play = drawer.querySelector('[data-play]');
-    play.textContent = s.playing ? 'Pause' : 'Play';
-    play.disabled = !!s.sim?.pendingReplan && !s.playing;
+    const playTxt = s.playing ? 'Pause' : 'Play';                 // only on change (see app.js: Safari click bug)
+    if (play.textContent !== playTxt) play.textContent = playTxt;
+    const playDis = !!s.sim?.pendingReplan && !s.playing;
+    if (play.disabled !== playDis) play.disabled = playDis;
     drawer.querySelectorAll('[data-speed]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === s.speed)));
     drawer.querySelectorAll('[data-crew]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.crew) === (s.tabletCrew ?? 0))));
     const tEl = drawer.querySelector('[data-time]');

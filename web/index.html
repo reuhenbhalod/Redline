@@ -11,9 +11,7 @@
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="map.css">
   <link rel="stylesheet" href="panels.css">
-  <link rel="stylesheet" href="hud.css">
   <link rel="stylesheet" href="tablet.css">
-  <link rel="stylesheet" href="rover.css">
   <link rel="stylesheet" href="planner.css">
   <!-- Leaflet is a classic script: it defines window.L before app.js (a module) runs. -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -30,8 +28,6 @@
     <nav class="tb-views" id="mode-switch" aria-label="Views">
       <button type="button" class="view-tab" data-mode-btn="planner" aria-pressed="true" title="Habitat planner (1)">Planner</button>
       <button type="button" class="view-tab" data-mode-btn="tablet" aria-pressed="false" title="Astronaut tablet (2)">Astronaut tablet</button>
-      <button type="button" class="view-tab" data-mode-btn="hud" aria-pressed="false" title="Helmet HUD (3 or h)">Helmet HUD</button>
-      <button type="button" class="view-tab" data-mode-btn="rover" aria-pressed="false" title="Rover view (4)">Rover</button>
     </nav>
 
     <div class="tb-group tb-right">
@@ -54,8 +50,6 @@
           <button type="button" class="dd-view" data-mode-btn="planner" data-close><b>Habitat planner</b><span>Plan the route in the habitat</span></button>
           <button type="button" class="dd-view" data-mode-btn="planner" data-stop="A" data-close><b>Stop preview</b><span>Photos and tasks at a stop</span></button>
           <button type="button" class="dd-view" data-mode-btn="tablet" data-close><b>Astronaut tablet</b><span>What the crew carries</span></button>
-          <button type="button" class="dd-view" data-mode-btn="hud" data-close><b>Helmet HUD</b><span>Eyes-up visor overlay</span></button>
-          <button type="button" class="dd-view" data-mode-btn="rover" data-close><b>Rover view</b><span>Cameras, hazards, crew tracking</span></button>
           <div class="dd-crew"><span class="dd-lab">Crew shown on tablet</span>
             <div class="dd-seg"><button type="button" data-crew="0" aria-pressed="true">EV1</button><button type="button" data-crew="1" aria-pressed="false">EV2</button></div>
           </div>
@@ -84,7 +78,7 @@
 
       <div class="dd-col">
         <h3 class="dd-h">03 · Trigger a scenario</h3>
-        <button type="button" class="toggle scen" id="tgl-hazard" data-toggle="faults.hazard" data-goto="rover" aria-pressed="false">
+        <button type="button" class="toggle scen" id="tgl-hazard" data-toggle="faults.hazard" data-goto="tablet" aria-pressed="false">
           <span class="scen-txt"><b>Rover spots a rock field</b><span>Camera confirms rocks on A → B; detour sent to tablets</span></span><span class="scen-run">RUN →</span></button>
         <button type="button" class="toggle toggle-fault scen" id="tgl-air" data-toggle="faults.highAir" data-goto="tablet" aria-pressed="false">
           <span class="scen-txt"><b>High air use</b><span>Air burns 1.6× faster → turn-around (needs Demo 240)</span></span><span class="scen-run">RUN →</span></button>
@@ -110,9 +104,7 @@
     </aside>
   </main>
 
-  <section id="hud" aria-label="Helmet HUD" hidden></section>
   <section id="tablet" aria-label="Astronaut tablet" hidden></section>
-  <section id="rover" aria-label="Rover view" hidden></section>
 
   <div id="toasts" aria-live="polite"></div>
 

@@ -6,7 +6,7 @@ If you need a field that is missing, compute it locally inside your module.
 
 Serve the repo root (`python3 -m http.server 8000` from the repo) and open `/web/index.html`.
 Data comes from `../data/` by default. Override it with `?data=<path relative to /web/>`. More URL params:
-`?mode=planner|tablet|hud|rover` picks the view, `?stop=A` opens a stop preview, `?variant=skipA` picks the planned variant, and `?budget=demo` starts with the
+`?mode=planner|tablet` picks the view, `?stop=A` opens a stop preview, `?variant=skipA` picks the planned variant, and `?budget=demo` starts with the
 DEMO budget (`?budget=<minutes>` sets any demo value). Demo deep links: `?t=<min>` seeks after load, `?fault=link,air,storm,hazard`
 turns faults on from the start, `?slow=1` turns on slow pace, `?demo=1` opens the DEMO drawer.
 
@@ -24,13 +24,12 @@ There is no `env.json` any more: the environment comes from `env_data.json`, the
 | `hud.js`, `hud.css` | HUD agent | Helmet HUD inside `#hud` |
 | `sim.js`, `tests/sim.test.mjs` (+ `tests/index.js` imports) | sim agent | No DOM and no CSS. It is the **only writer of `state.sim`**. |
 | `tablet.js`, `tablet.css` | tablet view | Astronaut tablet inside `#tablet` (mode `tablet`). Read-only; emits `replan:confirm`, `toast`. |
-| `rover.js`, `rover.css` | rover view | Rover view inside `#rover` (mode `rover`). Read-only. |
-| `minimap.js` | shared | SVG mini map on the basemap that follows a point (used by tablet and rover). |
+| `minimap.js` | shared | SVG mini map on the basemap that follows a point (used by tablet). |
 | `planner.js`, `planner.css` | planner chrome | Layer rail, GO TO search, legend, route sheet and stop dossier (mockups). Writes `layersOn`, `roverPathOn`, `depotOn`, `selectedStopId`, `plannedVariantId` (idle only), `playing`; emits `map:focus`. The map's own layer control is hidden. `panels.js` still renders into `#side-panel`, which sits inside `#sheet-wrap`: its banners and replan card show above the sheet, its route/stop cards are replaced by the sheet, and safety/env/alerts/credits open under "Mission details". |
 | `demo.js` | demo console | Extra wiring for `#demo-drawer` (play, speed buttons, crew switch `state.tabletCrew`, stop-preview shortcut, scrubber stop markers, jump to the scenario's view). |
 
-**Redesign (Nov 14, `docs/ui-redesign.md`).** Four views: `planner`, `tablet`, `hud`, `rover` (top-bar tabs, keys 1–4,
-`h` toggles HUD, Esc returns to the planner). The sim controls and fault toggles moved into the **DEMO** drawer
+**Redesign (Nov 14, `docs/ui-redesign.md`).** Two views: `planner`, `tablet` (top-bar tabs, keys 1–2, Esc returns to the planner). The helmet HUD
+(`hud.js`, `#hud`) and rover (`rover.js`, `#rover`) views were removed; rows about them below are historical. The sim controls and fault toggles moved into the **DEMO** drawer
 (`#demo-drawer`, key `d`) with the same element ids. New tokens in `style.css`: `--signal` (teal accent),
 `--signal-ink`, `--glass`, `--map-tint` (CSS filter for the basemap only), `--label-ls`, and the `.mlabel` class.
 
@@ -190,9 +189,9 @@ ctx = {
   getState(), setState(patchOrFn), subscribe(fn) -> unsubscribe,  // fn(state, prev, changed:Set<string>)
   on(name, fn) -> unsubscribe, off(name, fn), emit(name, payload),
   timeHomeAt(x, y) | timeHomeAt([x, y]) -> minutes | null,       // from time_home.bin; null = unreachable/off-grid
-  setMode('planner' | 'tablet' | 'hud' | 'rover'),
+  setMode('planner' | 'tablet'),
   toast({ level: 'info'|'ok'|'warn'|'danger', title, text, timeoutMs }),
-  els: { map, sidePanel, hud, tablet, rover, toasts },          // containers (HTMLElements)
+  els: { map, sidePanel, tablet, toasts },                      // containers (HTMLElements)
   modules: {},                                                   // init return values (debug only)
 }
 ```
@@ -201,7 +200,7 @@ ctx = {
 ## Init signatures
 
 All are named exports. They may be sync or async, and their return value goes into `ctx.modules[name]`.
-`app.js` calls them in this order: **initSim → initMap → initPanels → initHud → initTablet → initRover**. Each call is wrapped in a try/catch,
+`app.js` calls them in this order: **initSim → initMap → initPanels → initTablet → initPlanner → initDemo**. Each call is wrapped in a try/catch,
 and a failure shows a toast. Every module should render once from `getState()` inside init and then subscribe.
 
 ```js
@@ -217,7 +216,7 @@ Top-level keys are shallow-merged by `setState`.
 
 | Key | Type | Writers | Readers |
 | --- | --- | --- | --- |
-| `mode` | `'planner' \| 'tablet' \| 'hud' \| 'rover'` | app.js (top bar, `h` key, Esc), any module via `ctx.setMode` | all. `app.js` toggles `body[data-mode]` and `#hud[hidden]`. map.js calls `invalidateSize()` when the mode returns to planner. hud.js renders only while in HUD mode. |
+| `mode` | `'planner' \| 'tablet'` | app.js (top bar, `h` key, Esc), any module via `ctx.setMode` | all. `app.js` toggles `body[data-mode]` and `#hud[hidden]`. map.js calls `invalidateSize()` when the mode returns to planner. hud.js renders only while in HUD mode. |
 | `plannedVariantId` | `string` (`'full'`, `'skipA'`) | panels.js (variant picker), map.js (click on a variant polyline) | sim, map, panels, hud. **The sim applies it only while `sim.status === 'idle'`** (it rebuilds `sim.active` from it). Otherwise it ignores it until the next reset. The panels should disable the picker unless the sim is idle. |
 | `selectedStopId` | `string \| null` | map.js (marker click), panels.js (stop list, close button) | panels (stop preview), map (highlight marker) |
 | `layersOn` | `{ [layerId]: boolean }` (keys from layers.json, all false at start) | planner.js (layer rail); map.js | map, panels (optional) |
