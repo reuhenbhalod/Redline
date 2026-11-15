@@ -1,0 +1,231 @@
+/* style.css — design tokens, page layout, top bar, buttons, toasts, load error.
+   Owned by app.js. Module styling lives in map.css / panels.css / hud.css.
+   Modules should use these tokens (var(--...)) rather than hard-coded colors. */
+
+:root {
+  /* Surfaces (dark Mars-dusk theme; planner and HUD share it) */
+  --bg: #17110e;            /* page background */
+  --surface: #221915;       /* top bar, side panel */
+  --surface-2: #2d221c;     /* cards inside the panel */
+  --surface-3: #3a2c24;     /* hover / inputs */
+  --border: #4a3a30;
+  --text: #f3e9e1;
+  --text-dim: #bba99b;
+  --text-faint: #8a776a;
+
+  /* Brand */
+  --mars: #d1603d;          /* rust, primary accent */
+  --mars-strong: #e8734d;
+  --dust: #e6b17e;          /* sand / secondary accent */
+
+  /* Semantic status (use for air bar, alerts, env status) */
+  --ok: #5fc48a;
+  --warn: #f2b33d;
+  --danger: #ef5a4c;
+  --info: #6cb4ee;
+
+  /* Map / route roles (map.js + hud.js should use these) */
+  --route-planned: #f3e9e1;     /* planned variant polyline */
+  --route-alt: #8a776a;         /* other variants, faint */
+  --route-active: #ffb347;      /* the route the crew is on now (after a replan) */
+  --route-proposed: #6cb4ee;    /* pending replan option, dashed */
+  --route-home: #ef5a4c;        /* abort / return-home route */
+  --crew-1: #4fc3f7;            /* EV1 dot ("blue dot") */
+  --crew-2: #b39ddb;            /* EV2 dot */
+  --rover: #ffd54f;
+  --stop-base: #5fc48a;
+  --stop-science: #e8734d;
+  --stop-depot: #6cb4ee;
+
+  /* Data basis and demo settings (safety params, assumptions, Demo budget) */
+  --basis-primary: #5fc48a;     /* from a primary NASA / mission source */
+  --basis-secondary: #6cb4ee;   /* secondary source (quoted guideline) */
+  --basis-assumption: #f2b33d;  /* our assumption */
+  --demo: #ffcf66;              /* DEMO SETTING text / border */
+  --demo-bg: rgba(255, 207, 102, 0.12);
+
+  /* Real-data map extras (map.js) */
+  --rover-path: #c9a0ff;        /* Perseverance traverse */
+  --tube: #ffffff;              /* depot sample tubes */
+
+  /* HUD */
+  --hud-bg: #05080a;
+  --hud-fg: #9ff5d0;
+  --hud-dim: #3f6b5c;
+
+  /* Type & shape */
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12.5px;
+  --fs-md: 14px;
+  --fs-lg: 17px;
+  --radius: 8px;
+  --radius-sm: 5px;
+  --gap: 10px;
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+
+  /* Layout */
+  --topbar-h: 56px;
+  --panel-w: 380px;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: var(--fs-md)/1.45 var(--font);
+  overflow: hidden;
+}
+button, select, input { font: inherit; color: inherit; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+[hidden] { display: none !important; }
+
+/* ---------------- Top bar ---------------- */
+#topbar {
+  position: fixed; inset: 0 0 auto 0; height: var(--topbar-h); z-index: 1000;
+  display: flex; align-items: center; gap: 14px; padding: 0 14px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  overflow-x: auto; white-space: nowrap;
+}
+.tb-group { display: flex; align-items: center; gap: 8px; flex: none; }
+.tb-brand { gap: 10px; margin-right: auto; }
+.brand-mark {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, var(--mars-strong), #7a2e18 70%);
+  box-shadow: 0 0 0 2px rgba(209, 96, 61, 0.25);
+}
+.brand-title { font-size: var(--fs-lg); font-weight: 650; margin: 0; letter-spacing: 0.2px; }
+
+.badge {
+  display: inline-block; padding: 2px 7px; border-radius: 4px;
+  font: 700 var(--fs-xs)/1.4 var(--mono); letter-spacing: 0.6px;
+}
+.badge-fake { background: var(--warn); color: #2a1a00; }
+/* DEMO settings (the Demo budget): striped amber so they never read as real numbers. */
+.badge-demo { background: var(--demo-bg); color: var(--demo); border: 1px dashed var(--demo); }
+#sel-budget[data-demo="true"] { border: 1px dashed var(--demo); color: var(--demo); background: var(--demo-bg); font-weight: 600; }
+/* Basis badges for safety params / assumptions (panels.js, hud.js may reuse the classes). */
+.basis { display: inline-block; padding: 0 5px; border-radius: 3px; font: 700 10px/1.6 var(--mono); letter-spacing: 0.4px; vertical-align: 1px; }
+.basis[data-basis="primary"] { color: var(--basis-primary); border: 1px solid var(--basis-primary); }
+.basis[data-basis="secondary"] { color: var(--basis-secondary); border: 1px solid var(--basis-secondary); }
+.basis[data-basis="assumption"] { color: var(--basis-assumption); border: 1px solid var(--basis-assumption); }
+.basis[data-basis="demo"] { color: var(--demo); border: 1px dashed var(--demo); background: var(--demo-bg); }
+
+.clock { font: 600 var(--fs-md) var(--mono); min-width: 64px; text-align: right; }
+.chip {
+  padding: 2px 8px; border-radius: 999px; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.5px;
+  background: var(--surface-3); color: var(--text-dim); border: 1px solid var(--border);
+}
+.chip[data-level="ok"] { color: var(--ok); border-color: var(--ok); }
+.chip[data-level="warn"] { color: var(--warn); border-color: var(--warn); }
+.chip[data-level="danger"] { color: #fff; background: var(--danger); border-color: var(--danger); }
+
+#scrub { width: 150px; min-width: 56px; flex: 0 1 150px; accent-color: var(--mars); }
+/* The sim group may shrink (the scrubber gives way first) so the demo toggles never run off screen. */
+.tb-sim { flex: 0 1 auto; }
+select {
+  background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 5px 6px;
+}
+
+/* ---------------- Buttons ---------------- */
+.btn, .toggle, .seg-btn {
+  cursor: pointer; border: 1px solid var(--border); background: var(--surface-3);
+  border-radius: var(--radius-sm); padding: 6px 11px; font-size: var(--fs-sm); line-height: 1.2;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.btn:hover, .toggle:hover, .seg-btn:hover { border-color: var(--dust); }
+.btn:focus-visible, .toggle:focus-visible, .seg-btn:focus-visible, select:focus-visible, input:focus-visible {
+  outline: 2px solid var(--dust); outline-offset: 1px;
+}
+.btn-primary { background: var(--mars); border-color: var(--mars); color: #fff; font-weight: 600; min-width: 64px; }
+.btn-primary:hover { background: var(--mars-strong); }
+.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.toggle[aria-pressed="true"] { background: var(--dust); border-color: var(--dust); color: #2a1a00; font-weight: 600; }
+.toggle-fault[aria-pressed="true"] { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.seg-btn { border: 0; border-radius: 0; background: transparent; }
+.seg-btn[aria-pressed="true"] { background: var(--mars); color: #fff; font-weight: 600; }
+
+/* ---------------- Main layout ---------------- */
+#planner {
+  position: fixed; top: var(--topbar-h); left: 0; right: 0; bottom: 0;
+  display: grid; grid-template-columns: 1fr var(--panel-w);
+}
+#map { position: relative; min-width: 0; height: 100%; background: #000; }
+#side-panel {
+  height: 100%; overflow-y: auto; background: var(--surface);
+  border-left: 1px solid var(--border); padding: 12px;
+}
+/* HUD fills the viewport below the top bar (sim controls stay usable). */
+#hud {
+  position: fixed; top: var(--topbar-h); left: 0; right: 0; bottom: 0; z-index: 900;
+  background: var(--hud-bg); color: var(--hud-fg); overflow: hidden;
+}
+body[data-mode="hud"] #planner { visibility: hidden; }
+
+/* Keep every top-bar control on screen on laptop widths (the bar still scrolls sideways below ~1000 px). */
+@media (max-width: 1560px) {
+  .brand-title { display: none; }
+  #topbar { gap: 10px; }
+  #scrub { width: 100px; flex-basis: 100px; }
+}
+@media (max-width: 1440px) {
+  #demo-badge .tb-long { display: none; }   /* the dashed select still reads "Demo 240 min" */
+}
+@media (max-width: 1280px) {
+  :root { --panel-w: 320px; }
+  #scrub { width: 80px; }
+  #topbar { gap: 8px; padding: 0 10px; }
+  .tb-group { gap: 5px; }
+  .btn, .toggle, .seg-btn { padding: 5px 8px; }
+}
+@media (max-width: 1100px) {
+  #scrub { width: 56px; }
+  #topbar { gap: 6px; }
+  .btn, .toggle, .seg-btn { padding: 4px 6px; font-size: 12px; }
+  .clock { min-width: 52px; }
+}
+@media (max-width: 760px) {
+  #planner { grid-template-columns: 1fr; grid-template-rows: 55% 45%; }
+  #side-panel { border-left: 0; border-top: 1px solid var(--border); }
+}
+
+/* ---------------- Toasts ---------------- */
+/* Toasts sit over the bottom-right of the map, never over the side panel (the replan card lives there). */
+#toasts {
+  position: fixed; right: calc(var(--panel-w) + 14px); bottom: 14px; z-index: 2000;
+  display: flex; flex-direction: column; gap: 6px; max-width: 340px; pointer-events: none;
+}
+/* The HUD has its own banner; planner toasts would cover HUD readouts. */
+body[data-mode="hud"] #toasts { display: none; }
+@media (max-width: 760px) { #toasts { right: 14px; } }
+.toast {
+  pointer-events: auto; background: var(--surface-2); border: 1px solid var(--border);
+  border-left: 4px solid var(--info); border-radius: var(--radius); padding: 7px 10px; line-height: 1.35;
+  box-shadow: var(--shadow); font-size: var(--fs-sm);
+  animation: toast-in 0.18s ease-out;
+}
+.toast[data-level="ok"] { border-left-color: var(--ok); }
+.toast[data-level="warn"] { border-left-color: var(--warn); }
+.toast[data-level="danger"] { border-left-color: var(--danger); }
+.toast-title { font-weight: 650; margin-bottom: 2px; }
+@keyframes toast-in { from { transform: translateY(6px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ---------------- Load error ---------------- */
+#load-error {
+  position: fixed; inset: 0; z-index: 3000; display: grid; place-items: center;
+  background: rgba(10, 6, 4, 0.92); padding: 24px;
+}
+#load-error .err-card {
+  max-width: 640px; background: var(--surface); border: 1px solid var(--danger);
+  border-radius: var(--radius); padding: 20px 24px; box-shadow: var(--shadow);
+}
+#load-error h2 { margin: 0 0 8px; color: var(--danger); font-size: var(--fs-lg); }
+#load-error code, #load-error pre { font-family: var(--mono); font-size: var(--fs-sm); }
+#load-error pre { background: var(--bg); padding: 8px 10px; border-radius: var(--radius-sm); white-space: pre-wrap; }

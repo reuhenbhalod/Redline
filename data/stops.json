@@ -1,0 +1,69 @@
+[
+ {
+  "id": "H",
+  "name": "Habitat",
+  "kind": "base",
+  "px": [
+   1298,
+   868
+  ],
+  "why": "Pressurized habitat on flat ground (0.8° mean slope within 100 m), Undifferentiated smooth, 1187 m from the depot",
+  "expect": "no rover images at this spot; images from rover positions within 400 m (nearest 152 m away, sol 404), similar smooth crater-floor terrain",
+  "rock_unit": "Undifferentiated smooth",
+  "photos": [
+   "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00401/ids/edr/browse/zcam/ZL0_0401_0702535082_292EBY_N0191126ZCAM05100_1100LMJ01_1200.jpg",
+   "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00401/ids/edr/browse/zcam/ZL0_0401_0702535165_826EBY_N0191126ZCAM05101_1100LMJ01_1200.jpg",
+   "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00402/ids/edr/browse/zcam/ZL0_0402_0702615168_864EBY_N0192066ZCAM08422_1100LMJ02_1200.jpg",
+   "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00402/ids/edr/browse/zcam/ZL0_0402_0702615091_864EBY_N0192066ZCAM08422_1100LMJ02_1200.jpg",
+   "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00403/ids/edr/browse/zcam/ZL0_0403_0702714612_409EBY_N0200000ZCAM05102_1100LMJ01_1200.jpg",
+   "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00403/ids/edr/browse/zcam/ZL0_0403_0702714684_021EBY_N0200000ZCAM05103_1100LMJ01_1200.jpg"
+  ],
+  "sol": 401
+ },
+ {
+  "id": "A",
+  "name": "Delta outcrop",
+  "kind": "science",
+  "px": [
+   702,
+   954
+  ],
+  "work_min": 45.0,
+  "sol": 460,
+  "why": "Delta thinly layered bedrock at the delta front, where CRISM maps clay minerals that form in water and can preserve signs of past life. Perseverance cored Bearwallow here",
+  "expect": "Layered sediments; slopes under 7.2° across the work area (90th percentile), no sand",
+  "minerals": "Fe/Mg clay (100% of the work area)",
+  "rock_unit": "Delta thinly layered",
+  "photos": [
+   "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/mosaics/mastcam_z_mosaic_sols_466_474_left_browse.png",
+   "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00455/ids/edr/browse/zcam/ZL0_0455_0707334428_488EBY_N0260000ZCAM08470_1100LMJ01_1200.jpg",
+   "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00455/ids/edr/browse/zcam/ZL0_0455_0707344300_206EBY_N0260096ZCAM07114_1100LMJ01_1200.jpg",
+   "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00456/ids/edr/browse/zcam/ZL0_0456_0707419817_553EBY_N0260096ZCAM08471_0630LMJ02_1200.jpg",
+   "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00456/ids/edr/browse/zcam/ZL0_0456_0707419898_553EBY_N0260096ZCAM08471_0630LMJ01_1200.jpg",
+   "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00458/ids/edr/browse/zcam/ZL0_0458_0707585837_818EBY_N0260218ZCAM08476_1100LMJ01_1200.jpg"
+  ]
+ },
+ {
+  "id": "B",
+  "name": "Three Forks depot",
+  "kind": "depot",
+  "px": [
+   762,
+   1123
+  ],
+  "work_min": 40.0,
+  "sol": 653,
+  "why": "Three Forks sample depot: retrieve the 10 cached sample tubes for return to Earth",
+  "expect": "10 tubes spread over about 35 m on flat ground",
+  "rock_unit": "",
+  "photos": [
+   "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/mosaics/mastcam_z_mosaic_sol_650_left_browse.png",
+   "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/mosaics/mastcam_z_mosaic_sol_670_left_browse.png",
+   "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/mosaics/mastcam_z_mosaic_sol_693_left_browse.png",
+   "https://pds-geosciences.wustl.edu/m2020/urn-nasa-pds-mars2020_sample_depot_three_forks/browse/depot/m20_orbital_map_three_forks.png",
+   "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00650/ids/edr/browse/zcam/ZL0_0650_0724648429_474EBY_N0320000ZCAM08648_0630LMJ01_1200.jpg",
+   "https://mars.nasa.gov/mars2020-raw-images/pub/ods/surface/sol/00650/ids/edr/browse/zcam/ZL0_0650_0724647950_473EBY_N0320000ZCAM08648_0630LMJ01_1200.jpg"
+  ],
+  "tubes": 10
+ }
+]
