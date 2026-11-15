@@ -7,8 +7,11 @@ A static web app for planning and flying a two-person Mars EVA. Two views (top-b
 | **Planner** | Habitat planning: HiRISE map (rust-tinted, 100 m grid), layers, routes, stop previews, safety check |
 | **Astronaut tablet** | What the crew carries: next stop, air left, time home, live map, four glove-sized buttons; full-screen reroute card, link-lost and storm modes |
 
-A built-in sim walks the crew along the route so the replan and fallback logic can be demonstrated. The presenter
-controls (Play, speed, Reset, scrubber, budget, scenarios) live in the **DEMO ▸** drawer (key `d`). Design notes:
+A built-in sim walks the crew along the route. **The demo is one scenario:** press **Play** and, about 10 s in (T+1:36 at
+600×), the support rover's camera confirms a rock field on the way from the delta outcrop to the depot and proposes a
+detour; the walk pauses until someone presses **Accept new route** (tablet card or the planner's route sheet), then
+finishes at T+3:08. The top bar has only Play / Pause and Restart (↺, key `r`). Other faults remain reachable for
+testing through `?fault=link,air,storm` (`?fault=nohazard` turns the rock field off). Design notes:
 `../docs/ui-redesign.md`.
 
 > **`../data/` now holds the REAL data** from the pipeline (HiRISE terrain, Stack et al. geology, CRISM minerals,
@@ -38,7 +41,6 @@ URL options:
 | `?t=<min>` | Seek the sim to that time after load (e.g. `?mode=tablet&t=24`) |
 | `?fault=link,air,storm,hazard` | Turn faults on from the start (e.g. `?mode=tablet&fault=hazard&t=97`) |
 | `?slow=1` | Slow pace on from the start (with `?budget=demo&t=40` the tablet shows the reroute card) |
-| `?demo=1` | Open the DEMO console |
 | `?stop=A` | Open the stop preview for A (or B, H) |
 | `?variant=skipA` | Start with another route variant as the plan |
 | `?budget=demo` | Start with the DEMO budget (240 min); `?budget=<minutes>` sets another demo value |

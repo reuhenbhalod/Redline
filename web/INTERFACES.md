@@ -26,11 +26,10 @@ There is no `env.json` any more: the environment comes from `env_data.json`, the
 | `tablet.js`, `tablet.css` | tablet view | Astronaut tablet inside `#tablet` (mode `tablet`). Read-only; emits `replan:confirm`, `toast`. |
 | `minimap.js` | shared | SVG mini map on the basemap that follows a point (used by tablet). |
 | `planner.js`, `planner.css` | planner chrome | Layer rail, GO TO search, legend, route sheet and stop dossier (mockups). Writes `layersOn`, `roverPathOn`, `depotOn`, `selectedStopId`, `plannedVariantId` (idle only), `playing`; emits `map:focus`. The map's own layer control is hidden. `panels.js` still renders into `#side-panel`, which sits inside `#sheet-wrap`: its banners and replan card show above the sheet, its route/stop cards are replaced by the sheet, and safety/env/alerts/credits open under "Mission details". |
-| `demo.js` | demo console | Extra wiring for `#demo-drawer` (play, speed buttons, crew switch `state.tabletCrew`, stop-preview shortcut, scrubber stop markers, jump to the scenario's view). |
+| ~~`demo.js`~~ | removed | The DEMO console was removed (Nov 14). The demo is the rock-field scenario, armed at boot (`faults.hazard: true`); the top bar has Play / Pause and Restart. |
 
 **Redesign (Nov 14, `docs/ui-redesign.md`).** Two views: `planner`, `tablet` (top-bar tabs, keys 1–2, Esc returns to the planner). The helmet HUD
-(`hud.js`, `#hud`) and rover (`rover.js`, `#rover`) views were removed; rows about them below are historical. The sim controls and fault toggles moved into the **DEMO** drawer
-(`#demo-drawer`, key `d`) with the same element ids. New tokens in `style.css`: `--signal` (teal accent),
+(`hud.js`, `#hud`) and rover (`rover.js`, `#rover`) views were removed; rows about them below are historical. The DEMO drawer was later removed; see `demo.js` below. New tokens in `style.css`: `--signal` (teal accent),
 `--signal-ink`, `--glass`, `--map-tint` (CSS filter for the basemap only), `--label-ls`, and the `.mlabel` class.
 
 Shared CSS from `style.css` you may use: tokens `--basis-primary`, `--basis-secondary`, `--basis-assumption`,

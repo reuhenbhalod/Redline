@@ -7,7 +7,6 @@ import { initMap } from './map.js';
 import { initPanels } from './panels.js';
 import { initTablet } from './tablet.js';
 import { initPlanner } from './planner.js';
-import { initDemo } from './demo.js';
 
 // ---------------------------------------------------------------------------
 // Tunable demo constants (shown in the UI as assumptions where relevant).
@@ -22,7 +21,7 @@ const DEMO = {
   drGrowthMPerMin: 1.2,       // dead-reckoning uncertainty growth while the link is lost
   drDriftMPerMin: 0.6,        // dead-reckoning drift of the displayed dot while the link is lost
 };
-const DEFAULT_SPEED = 300;    // x real time; sim minutes per real second = speed / 60
+const DEFAULT_SPEED = 600;    // x real time; sim minutes per real second = speed / 60 (the rock field shows up ~10 s after Play)
 // DEMO SETTING, not the real suit budget. With the real 480 min the full plan (~186 min) always fits,
 // so "Slow pace" can never trigger a replan. At 240 min (checked against the real routes.json):
 // on time -> the plan fits (back at ~T+3:06, ~54 min of air left); slow pace 0.8x -> the T+0:15
@@ -500,20 +499,6 @@ function buildConfig(data) {
 // ---------------------------------------------------------------------------
 const $ = (sel) => document.querySelector(sel);
 
-function getPath(obj, path) {
-  return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
-}
-
-function toggleKey(key) {
-  const s = getState();
-  if (key.includes('.')) {
-    const [outer, inner] = key.split('.');
-    setState({ [outer]: { ...s[outer], [inner]: !s[outer]?.[inner] } });
-  } else {
-    setState({ [key]: !s[key] });
-  }
-}
-
 export const MODES = ['planner', 'tablet'];
 
 export function setMode(mode) {
@@ -549,55 +534,15 @@ const STATUS_LEVEL = {
 };
 
 function wireTopBar(config) {
-  const scrub = $('#scrub');
-  let scrubbing = false;
-  scrub.max = String(Math.ceil(effectiveBudget(getState(), config).budgetMin));
-
-  // Demo budget select: DEMO SETTING, not the real suit budget. Only changeable while the sim is idle
-  // (Reset first); the sim reads the budget through effectiveBudget(state, config).
-  const selBudget = $('#sel-budget');
-  selBudget.innerHTML = '';
-  for (const o of config.budgetOptions) {
-    const opt = document.createElement('option');
-    opt.value = o.value == null ? '' : String(o.value);
-    opt.textContent = o.label;
-    selBudget.appendChild(opt);
-  }
-  selBudget.addEventListener('change', (e) => {
-    const v = e.target.value === '' ? null : Number(e.target.value);
-    setState({ demoBudgetMin: v });
-  });
-
+  // Top bar: view tabs, Play / Pause, Restart. The demo is one scenario (the rover spots a rock field on the
+  // way from stop A to the depot and proposes a detour), armed at boot, so Play is all the presenter needs.
   $('#btn-play').addEventListener('click', () => setState({ playing: !getState().playing }));
   $('#btn-reset').addEventListener('click', () => {
     setState({ playing: false });
     emit('sim:reset');
   });
-  $('#sel-speed').addEventListener('change', (e) => setState({ speed: Number(e.target.value) }));
-  scrub.addEventListener('pointerdown', () => { scrubbing = true; });
-  scrub.addEventListener('pointerup', () => { scrubbing = false; });
-  scrub.addEventListener('change', () => { scrubbing = false; });
-  scrub.addEventListener('input', () => emit('sim:seek', { t: Number(scrub.value) }));
-
-  document.querySelectorAll('[data-toggle]').forEach((btn) => {
-    btn.addEventListener('click', () => toggleKey(btn.dataset.toggle));
-  });
   document.querySelectorAll('[data-mode-btn]').forEach((btn) => {
     btn.addEventListener('click', () => setMode(btn.dataset.modeBtn));
-  });
-
-  // DEMO drawer: presenter controls (clock, speed, budget, scenarios). Same element ids as the old top bar.
-  const drawer = $('#demo-drawer');
-  const demoBtn = $('#btn-demo');
-  const setDrawer = (open) => {
-    drawer.hidden = !open;
-    demoBtn.setAttribute('aria-expanded', String(open));
-    demoBtn.textContent = open ? 'DEMO ▾' : 'DEMO ▸';
-  };
-  demoBtn.addEventListener('click', () => setDrawer(drawer.hidden));
-  if (new URLSearchParams(location.search).get('demo') === '1') setDrawer(true);   // ?demo=1 opens the drawer
-  document.addEventListener('pointerdown', (e) => {
-    if (!drawer.hidden && !drawer.contains(e.target) && !demoBtn.contains(e.target)) setDrawer(false);
   });
 
   document.addEventListener('keydown', (e) => {
@@ -605,8 +550,6 @@ function wireTopBar(config) {
     const tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'select' || tag === 'textarea' || e.target.isContentEditable) return;
     if (e.key >= '1' && e.key <= String(MODES.length)) { setMode(MODES[Number(e.key) - 1]); e.preventDefault(); }
-    else if (e.key === 'd' || e.key === 'D') { setDrawer(drawer.hidden); e.preventDefault(); }
-    else if (e.key === 'Escape' && !drawer.hidden) setDrawer(false);
     else if (e.key === 'Escape' && getState().mode !== 'planner') setMode('planner');
     else if (e.key === ' ' && tag !== 'button') { setState({ playing: !getState().playing }); e.preventDefault(); }
     else if (e.key === 'r' || e.key === 'R') { setState({ playing: false }); emit('sim:reset'); }
@@ -619,58 +562,37 @@ function wireTopBar(config) {
     const play = $('#btn-play');
     // Only touch the button when something changed: rewriting its text 60x/s replaces the text node under the
     // cursor, and Safari then drops the click (Pause appeared dead while the sim was running).
-    const playTxt = s.playing ? 'Pause' : 'Play';
+    const done = sim?.status === 'done' || sim?.status === 'aborted';
+    const playTxt = s.playing ? 'Pause' : (done ? 'Replay' : (sim?.status && sim.status !== 'idle' ? 'Resume' : 'Play'));
     if (play.textContent !== playTxt) play.textContent = playTxt;
     const playDis = awaiting && !s.playing;
     if (play.disabled !== playDis) play.disabled = playDis;
-    const playTitle = awaiting ? 'Confirm or review the reroute first' : 'Play / pause (space)';
+    const playTitle = awaiting ? 'Accept the reroute first' : 'Play / pause (space)';
     if (play.title !== playTitle) play.title = playTitle;
-    $('#sel-speed').value = String(s.speed);
     const b = effectiveBudget(s, config);
-    const idle = (sim?.status ?? 'idle') === 'idle';
     const budgetKey = `${b.demo}|${b.budgetMin}|${b.realBudgetMin}`;
     if (budgetKey !== lastBudgetKey) {
       lastBudgetKey = budgetKey;
-      // a non-standard ?budget=<n> value gets its own option (as in the Safety card), so it never shows blank
-      selBudget.querySelectorAll('option[data-extra]').forEach((o) => o.remove());
-      if (b.demo && !config.budgetOptions.some((o) => o.value === b.budgetMin)) {
-        const opt = document.createElement('option');
-        opt.value = String(b.budgetMin);
-        opt.dataset.extra = '1';
-        opt.textContent = `Demo ${b.budgetMin} min`;
-        selBudget.appendChild(opt);
-      }
       const badge = $('#demo-badge');
       badge.hidden = !b.demo;
       badge.innerHTML = `DEMO<span class="tb-long"> BUDGET ${Math.round(Number(b.budgetMin))} MIN</span>`;
       badge.title = `${DEMO_BUDGET_NOTE} (real: ${b.realBudgetMin} min)`;
     }
-    const selVal = b.demo ? String(b.budgetMin) : '';
-    if (selBudget.value !== selVal) selBudget.value = selVal;
-    selBudget.disabled = !idle;
-    const selTitle = (b.demo ? `${DEMO_BUDGET_NOTE}. ` : `Real suit budget ${b.realBudgetMin} min (safety_params.json). `)
-      + (idle ? 'Suit budget used by the sim' : 'Reset the sim to change the budget');
-    if (selBudget.title !== selTitle) selBudget.title = selTitle;
-    if (selBudget.dataset.demo !== String(b.demo)) selBudget.dataset.demo = String(b.demo);
-    scrub.max = String(Math.ceil(b.budgetMin));
     const t = sim?.t ?? 0;
-    $('#clock').textContent = `T+${fmtMin(t)}`;
-    if (!scrubbing) scrub.value = String(t);
+    const clk = `T+${fmtMin(t)}`;
+    if ($('#clock').textContent !== clk) $('#clock').textContent = clk;
     const chip = $('#status-chip');
     const status = sim?.status ?? 'idle';
-    chip.textContent = status.replace('_', ' ');
+    const chipTxt = status.replace('_', ' ');
+    if (chip.textContent !== chipTxt) chip.textContent = chipTxt;
     chip.dataset.level = s.faults.storm ? 'danger' : (STATUS_LEVEL[status] ?? '');
-    document.querySelectorAll('[data-toggle]').forEach((btn) => {
-      btn.setAttribute('aria-pressed', String(!!getPath(s, btn.dataset.toggle)));
-    });
     document.querySelectorAll('[data-mode-btn]').forEach((btn) => {
       btn.setAttribute('aria-pressed', String(btn.dataset.modeBtn === s.mode));
     });
   }
   render(getState());
   subscribe((s, prev, changed) => {
-    if (changed.has('sim') || changed.has('playing') || changed.has('speed') || changed.has('faults') ||
-        changed.has('slowPace') || changed.has('mode') || changed.has('demoBudgetMin')) render(s);
+    if (changed.has('sim') || changed.has('playing') || changed.has('faults') || changed.has('mode') || changed.has('demoBudgetMin')) render(s);
   });
 }
 
@@ -713,7 +635,7 @@ async function boot() {
     slowPace: params.get('slow') === '1',
     faults: (() => {
       const f = new Set((params.get('fault') || '').split(',').map((x) => x.trim()));
-      return { linkLost: f.has('link'), highAir: f.has('air'), storm: f.has('storm'), hazard: f.has('hazard') };
+      return { linkLost: f.has('link'), highAir: f.has('air'), storm: f.has('storm'), hazard: !f.has('nohazard') };   // rock field: the demo scenario, on by default
     })(),
     demoBudgetMin,          // null = real suit budget; a number = DEMO override (see effectiveBudget in util.js)
     roverPathOn: false,     // map.js: Perseverance's real traverse overlay
@@ -755,7 +677,7 @@ async function boot() {
 
   // sim first so state.sim exists before the views render; each init is isolated.
   const inits = [['sim', initSim], ['map', initMap], ['panels', initPanels],
-    ['tablet', initTablet], ['planner', initPlanner], ['demo', initDemo]];
+    ['tablet', initTablet], ['planner', initPlanner]];
   for (const [name, init] of inits) {
     try {
       ctx.modules[name] = (await init(ctx)) ?? null;

@@ -14,15 +14,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=20261114223145">
-  <link rel="stylesheet" href="map.css?v=20261114223145">
-  <link rel="stylesheet" href="panels.css?v=20261114223145">
-  <link rel="stylesheet" href="tablet.css?v=20261114223145">
-  <link rel="stylesheet" href="planner.css?v=20261114223145">
+  <link rel="stylesheet" href="style.css?v=20261114235327">
+  <link rel="stylesheet" href="map.css?v=20261114235327">
+  <link rel="stylesheet" href="panels.css?v=20261114235327">
+  <link rel="stylesheet" href="tablet.css?v=20261114235327">
+  <link rel="stylesheet" href="planner.css?v=20261114235327">
   <!-- Leaflet is a classic script: it defines window.L before app.js (a module) runs. -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="importmap" data-stamp>{"imports":{"./app.js":"./app.js?v=20261114223145","./demo.js":"./demo.js?v=20261114223145","./map.js":"./map.js?v=20261114223145","./minimap.js":"./minimap.js?v=20261114223145","./panels.js":"./panels.js?v=20261114223145","./planner.js":"./planner.js?v=20261114223145","./sim.js":"./sim.js?v=20261114223145","./tablet.js":"./tablet.js?v=20261114223145","./util.js":"./util.js?v=20261114223145"}}</script>
-  <script type="module" src="app.js?v=20261114223145"></script>
+  <script type="importmap" data-stamp>{"imports":{"./app.js":"./app.js?v=20261114235327","./map.js":"./map.js?v=20261114235327","./minimap.js":"./minimap.js?v=20261114235327","./panels.js":"./panels.js?v=20261114235327","./planner.js":"./planner.js?v=20261114235327","./sim.js":"./sim.js?v=20261114235327","./tablet.js":"./tablet.js?v=20261114235327","./util.js":"./util.js?v=20261114235327"}}</script>
+  <script type="module" src="app.js?v=20261114235327"></script>
 </head>
 <body data-mode="planner">
   <header id="topbar">
@@ -42,64 +42,11 @@
       <span id="clock" class="clock" title="Sim time since leaving the habitat">T+0:00</span>
       <span id="status-chip" class="chip">idle</span>
       <button type="button" id="btn-play" class="btn btn-primary" title="Play / pause (space)">Play</button>
-      <button type="button" id="btn-demo" class="btn btn-demo" aria-expanded="false" aria-controls="demo-drawer" title="Presenter controls (d)">DEMO ▸</button>
+      <button type="button" id="btn-reset" class="btn btn-reset" title="Restart the walk from the habitat (r)" aria-label="Restart">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/></svg></button>
     </div>
   </header>
 
-  <section id="demo-drawer" aria-label="Demo console" hidden>
-    <div class="dd-console" role="dialog" aria-label="Demo console">
-      <div class="dd-top">
-        <h2 class="dd-title">Demo console</h2>
-        <span class="dd-sub">For presenters · hidden from crew screens · key D</span>
-      </div>
-      <div class="dd-col">
-        <h3 class="dd-h">01 · Switch view</h3>
-        <div class="dd-views">
-          <button type="button" class="dd-view" data-mode-btn="planner" data-close><b>Habitat planner</b><span>Plan the route in the habitat</span></button>
-          <button type="button" class="dd-view" data-mode-btn="planner" data-stop="A" data-close><b>Stop preview</b><span>Photos and tasks at a stop</span></button>
-          <button type="button" class="dd-view" data-mode-btn="tablet" data-close><b>Astronaut tablet</b><span>What the crew carries</span></button>
-          <div class="dd-crew"><span class="dd-lab">Crew shown on tablet</span>
-            <div class="dd-seg"><button type="button" data-crew="0" aria-pressed="true">EV1</button><button type="button" data-crew="1" aria-pressed="false">EV2</button></div>
-          </div>
-        </div>
-
-        <h3 class="dd-h">02 · Sim clock</h3>
-        <div class="dd-clock">
-          <button type="button" class="dd-play" data-play aria-label="Play or pause">Play</button>
-          <div class="dd-seg dd-speeds">
-            <button type="button" data-speed="60">60×</button><button type="button" data-speed="300">300×</button><button type="button" data-speed="1200">1200×</button>
-          </div>
-          <select id="sel-speed" aria-label="Sim speed" class="dd-hidden-select">
-            <option value="60">60×</option><option value="120">120×</option><option value="300" selected>300×</option><option value="600">600×</option><option value="1200">1200×</option>
-          </select>
-          <span class="dd-time" data-time>T+0:00</span>
-        </div>
-        <div class="dd-scrubwrap">
-          <input type="range" id="scrub" min="0" max="480" step="0.5" value="0" aria-label="Sim time scrubber">
-          <div class="dd-marks" data-marks></div>
-        </div>
-        <label class="dd-budget"><span class="dd-lab">Suit budget</span>
-          <select id="sel-budget" aria-label="Suit budget (Demo budget is a DEMO SETTING, not the real suit budget)"><option value="">Real budget</option></select>
-        </label>
-        <p class="dd-note">Demo 240 min is a DEMO SETTING, not the real suit budget. Change it before Play.</p>
-      </div>
-
-      <div class="dd-col">
-        <h3 class="dd-h">03 · Trigger a scenario</h3>
-        <button type="button" class="toggle scen" id="tgl-hazard" data-toggle="faults.hazard" data-goto="tablet" aria-pressed="false">
-          <span class="scen-txt"><b>Rover spots a rock field</b><span>Camera confirms rocks on A → B; detour sent to tablets</span></span><span class="scen-run">RUN →</span></button>
-        <button type="button" class="toggle toggle-fault scen" id="tgl-air" data-toggle="faults.highAir" data-goto="tablet" aria-pressed="false">
-          <span class="scen-txt"><b>High air use</b><span>Air burns 1.6× faster → turn-around (needs Demo 240)</span></span><span class="scen-run">RUN →</span></button>
-        <button type="button" class="toggle toggle-fault scen" id="tgl-link" data-toggle="faults.linkLost" data-goto="tablet" aria-pressed="false">
-          <span class="scen-txt"><b>Cut rover link</b><span>Suit-only mode: saved route, air, way home</span></span><span class="scen-run">RUN →</span></button>
-        <button type="button" class="toggle toggle-fault scen" id="tgl-storm" data-toggle="faults.storm" data-goto="tablet" aria-pressed="false">
-          <span class="scen-txt"><b>Solar storm warning</b><span>Storm → status red, walk aborted, shortest way home</span></span><span class="scen-run">RUN →</span></button>
-        <button type="button" class="toggle scen" id="tgl-slow" data-toggle="slowPace" data-goto="tablet" aria-pressed="false">
-          <span class="scen-txt"><b>Slow pace</b><span>Crew walks at 0.8× → replan at the next checkpoint</span></span><span class="scen-run">RUN →</span></button>
-        <button type="button" id="btn-reset" class="dd-reset" title="Reset sim (r)">Reset simulation</button>
-      </div>
-    </div>
-  </section>
 
   <main id="planner" aria-label="Habitat planner">
     <div id="map" aria-label="Map"></div>
