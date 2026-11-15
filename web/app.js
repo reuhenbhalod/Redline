@@ -7,6 +7,7 @@ import { initMap } from './map.js';
 import { initPanels } from './panels.js';
 import { initTablet } from './tablet.js';
 import { initPlanner } from './planner.js';
+import { initEvents } from './events.js';
 
 // ---------------------------------------------------------------------------
 // Tunable demo constants (shown in the UI as assumptions where relevant).
@@ -677,7 +678,7 @@ async function boot() {
 
   // sim first so state.sim exists before the views render; each init is isolated.
   const inits = [['sim', initSim], ['map', initMap], ['panels', initPanels],
-    ['tablet', initTablet], ['planner', initPlanner]];
+    ['tablet', initTablet], ['planner', initPlanner], ['events', initEvents]];
   for (const [name, init] of inits) {
     try {
       ctx.modules[name] = (await init(ctx)) ?? null;

@@ -206,7 +206,8 @@ body:not([data-mode="planner"]) #planner { visibility: hidden; }
   position: fixed; right: calc(var(--panel-w) + 14px); bottom: 14px; z-index: 2000;
   display: flex; flex-direction: column; gap: 6px; max-width: 340px; pointer-events: none;
 }
-body[data-mode="tablet"] #toasts { display: none; }
+/* tablet: the sim's own alerts are not toasted there (app.js), but walk events (events.js) are */
+body[data-mode="tablet"] #toasts { right: 96px; bottom: 100px; max-width: 380px; }
 @media (max-width: 760px) { #toasts { right: 14px; } }
 .toast {
   pointer-events: auto; background: var(--glass); border: 1px solid var(--border);
@@ -237,3 +238,24 @@ body[data-mode="tablet"] #toasts { display: none; }
 .btn-reset { width: 36px; height: 32px; padding: 0; display: grid; place-items: center; color: var(--text-dim); }
 .btn-reset:hover { color: var(--text); }
 .btn-reset svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Storm countdown chip (top bar) */
+.storm-chip { color: #ffe2b0; border-color: var(--warn); background: rgba(255, 181, 71, 0.12); }
+.storm-chip[data-level="ok"] { color: var(--signal); border-color: var(--signal); background: rgba(94, 234, 212, 0.10); }
+.storm-chip[data-level="danger"] { color: #fff; background: var(--danger); border-color: var(--danger); }
+
+/* Walk alert pop-up (events.js): over every view, pauses the walk until Understood */
+#event-pop { position: fixed; inset: var(--topbar-h) 0 0 0; z-index: 1500; display: grid; place-items: center; padding: 24px; background: rgba(10, 8, 7, 0.62); backdrop-filter: blur(2px); }
+#event-pop[hidden] { display: none !important; }
+#event-pop .ep-card { width: min(620px, 100%); background: #1a1408; border: 2px solid var(--warn); padding: 24px 28px; display: flex; flex-direction: column; gap: 12px; box-shadow: var(--shadow); }
+#event-pop[data-level="danger"] .ep-card { background: #1f0d0b; border-color: var(--danger); }
+#event-pop .ep-k { font: 500 10.5px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); }
+#event-pop .ep-h { margin: 0; font: 600 26px/1.15 var(--font); color: #ffe2b0; }
+#event-pop[data-level="danger"] .ep-h { color: #ffd2cf; }
+#event-pop .ep-t { margin: 0; font-size: 15px; line-height: 1.55; color: var(--text); }
+#event-pop .ep-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+#event-pop .ep-facts div { border: 1px solid var(--border); padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+#event-pop .ep-facts span { font: 500 10px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); }
+#event-pop .ep-facts b { font: 600 17px var(--mono); }
+#event-pop .ep-btn { margin-top: 4px; min-height: 60px; border: 0; background: var(--signal); color: var(--signal-ink); cursor: pointer; font: 700 18px var(--font); letter-spacing: 0.04em; }
+#event-pop .ep-btn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
