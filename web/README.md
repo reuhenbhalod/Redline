@@ -49,6 +49,13 @@ Tests for the sim logic (no browser needed): `node --test web/tests` from the re
 `data/routes.json`, `data/safety_params.json`, `data/bounds.json` and `data/site.json`, and set the budget explicitly in every
 scenario (real 480 min, or the demo 240 min).
 
+## Deploying (GitHub Pages)
+
+Pages serves `main` from the repo root. Browsers may cache each file for 10 minutes, and a new `index.html` mixed with
+an old cached module stops the app from starting. **Before pushing any change under `web/`, run**
+`python3 tools/stamp_version.py`: it puts a fresh `?v=` on every stylesheet, on `app.js` and (through an import map) on
+every module import, so a browser always loads one matching set of files.
+
 ## Data files used
 
 | File | Written by | Used for |
