@@ -59,22 +59,37 @@ export function initPlanner(ctx) {
     ...data.stops.map((st) => ({ label: `${st.name} (stop ${st.id})`, px: st.px, stopId: st.id, zoom: 1 })),
     ...(data.depot?.tubes || []).map((t) => ({ label: `Tube ${t.name} (${t.sampleId})`, px: t.px, zoom: 2 })),
   ];
-  goto.innerHTML = `<span class="gt-k">Go to</span>
-    <input type="text" list="goto-list" placeholder="stop or sample tube" aria-label="Go to a stop or sample tube">
-    <datalist id="goto-list">${places.map((p) => `<option value="${esc(p.label)}"></option>`).join('')}</datalist>`;
-  const gotoInput = goto.querySelector('input');
-  function go() {
-    const q = gotoInput.value.trim().toLowerCase();
-    if (!q) return;
-    const hit = places.find((p) => p.label.toLowerCase() === q) || places.find((p) => p.label.toLowerCase().includes(q));
-    if (!hit) { ctx.toast({ level: 'info', title: 'Not found', text: `No stop or tube matches "${gotoInput.value}".`, timeoutMs: 2500 }); return; }
-    ctx.emit('map:focus', { px: hit.px, zoom: hit.zoom });
-    if (hit.stopId) ctx.setState({ selectedStopId: hit.stopId });
+  // A short, fixed list (3 stops + the depot tubes), so GO TO is a dropdown menu, not a search box.
+  const stopPlaces = places.filter((p) => p.stopId);
+  const tubePlaces = places.filter((p) => !p.stopId);
+  const stopLetter = (id) => esc(id);
+  goto.innerHTML = `
+    <button type="button" class="gt-btn" aria-haspopup="true" aria-expanded="false">
+      <span class="gt-k">Go to</span><span class="gt-cur">Choose a stop or sample tube</span><span class="gt-caret" aria-hidden="true">▾</span></button>
+    <div class="gt-menu" role="menu" hidden>
+      <span class="gt-h">Stops</span>
+      ${data.stops.map((st, i) => `<button type="button" role="menuitem" class="gt-item" data-i="${places.indexOf(stopPlaces[i])}">
+        <i class="gt-dia ${st.kind === 'base' ? 'gt-base' : ''}">${stopLetter(st.id)}</i><span>${esc(st.name)}</span></button>`).join('')}
+      ${tubePlaces.length ? `<span class="gt-h">Sample tubes at Three Forks (${tubePlaces.length})</span>
+      <div class="gt-tubes">${(data.depot?.tubes || []).map((t, i) => `<button type="button" role="menuitem" class="gt-item gt-tube" data-i="${places.indexOf(tubePlaces[i])}">${esc(t.name)}</button>`).join('')}</div>` : ''}
+    </div>`;
+  const gtBtn = goto.querySelector('.gt-btn');
+  const gtMenu = goto.querySelector('.gt-menu');
+  const setMenu = (open) => { gtMenu.hidden = !open; gtBtn.setAttribute('aria-expanded', String(open)); };
+  gtBtn.addEventListener('click', () => setMenu(gtMenu.hidden));
+  gtMenu.addEventListener('click', (e) => {
+    const b = e.target.closest('.gt-item');
+    if (!b) return;
+    const hit = places[Number(b.dataset.i)];
+    setMenu(false);
+    if (!hit) return;
+    goto.querySelector('.gt-cur').textContent = hit.stopId ? data.stopsById[hit.stopId].name : `Tube ${b.textContent}`;
     if (!hit.stopId && ctx.getState().depotOn === false) ctx.setState({ depotOn: true });
-    gotoInput.blur();
-  }
-  gotoInput.addEventListener('change', go);
-  gotoInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+    if (hit.stopId) ctx.setState({ selectedStopId: hit.stopId });
+    ctx.emit('map:focus', { px: hit.px, zoom: hit.zoom });
+  });
+  document.addEventListener('pointerdown', (e) => { if (!gtMenu.hidden && !goto.contains(e.target)) setMenu(false); });
+  goto.addEventListener('keydown', (e) => { if (e.key === 'Escape') { setMenu(false); gtBtn.focus(); } });
 
   // ------------------------------------------------------------------ route sheet
   let details = false;

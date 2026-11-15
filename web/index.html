@@ -14,15 +14,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=20261114221614">
-  <link rel="stylesheet" href="map.css?v=20261114221614">
-  <link rel="stylesheet" href="panels.css?v=20261114221614">
-  <link rel="stylesheet" href="tablet.css?v=20261114221614">
-  <link rel="stylesheet" href="planner.css?v=20261114221614">
+  <link rel="stylesheet" href="style.css?v=20261114222131">
+  <link rel="stylesheet" href="map.css?v=20261114222131">
+  <link rel="stylesheet" href="panels.css?v=20261114222131">
+  <link rel="stylesheet" href="tablet.css?v=20261114222131">
+  <link rel="stylesheet" href="planner.css?v=20261114222131">
   <!-- Leaflet is a classic script: it defines window.L before app.js (a module) runs. -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="importmap" data-stamp>{"imports":{"./app.js":"./app.js?v=20261114221614","./demo.js":"./demo.js?v=20261114221614","./map.js":"./map.js?v=20261114221614","./minimap.js":"./minimap.js?v=20261114221614","./panels.js":"./panels.js?v=20261114221614","./planner.js":"./planner.js?v=20261114221614","./sim.js":"./sim.js?v=20261114221614","./tablet.js":"./tablet.js?v=20261114221614","./util.js":"./util.js?v=20261114221614"}}</script>
-  <script type="module" src="app.js?v=20261114221614"></script>
+  <script type="importmap" data-stamp>{"imports":{"./app.js":"./app.js?v=20261114222131","./demo.js":"./demo.js?v=20261114222131","./map.js":"./map.js?v=20261114222131","./minimap.js":"./minimap.js?v=20261114222131","./panels.js":"./panels.js?v=20261114222131","./planner.js":"./planner.js?v=20261114222131","./sim.js":"./sim.js?v=20261114222131","./tablet.js":"./tablet.js?v=20261114222131","./util.js":"./util.js?v=20261114222131"}}</script>
+  <script type="module" src="app.js?v=20261114222131"></script>
 </head>
 <body data-mode="planner">
   <header id="topbar">
@@ -104,7 +104,7 @@
   <main id="planner" aria-label="Habitat planner">
     <div id="map" aria-label="Map"></div>
     <aside id="layer-rail" aria-label="Map layers"></aside>
-    <label id="goto"></label>
+    <div id="goto"></div>
     <div id="layer-legend" aria-label="Legend of the layers that are on" hidden></div>
     <aside id="sheet-wrap" aria-label="Route sheet">
       <div id="route-sheet"></div>

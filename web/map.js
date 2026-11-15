@@ -462,20 +462,20 @@ export function initMap(ctx) {
 
   // ---------------------------------------------------------------- follow-crew + fit
   let follow = false;
+  const FOLLOW_ZOOM = 1.5;   // close-up for Follow crew (about 0.7 m per screen pixel)
   const ViewControl = L.Control.extend({
     options: { position: 'topleft' },
     onAdd() {
       const box = L.DomUtil.create('div', 'map-ctl map-view leaflet-bar');
       L.DomEvent.disableClickPropagation(box);
-      box.innerHTML = `<button type="button" class="map-btn" data-act="fit" title="Fit the whole map">Fit</button>
-        <button type="button" class="map-btn" data-act="follow" aria-pressed="false" title="Keep EV1 centered">Follow crew</button>`;
+      box.innerHTML = `<button type="button" class="map-btn" data-act="follow" aria-pressed="false" title="Zoom in on EV1 and keep the crew centered">Follow crew</button>`;
       box.addEventListener('click', (e) => {
         const act = e.target?.closest?.('[data-act]')?.dataset.act;
-        if (act === 'fit') { follow = false; syncFollowBtn(); map.fitBounds(bounds); }
         if (act === 'follow') {
           follow = !follow; syncFollowBtn();
-          const px = ctx.getState().sim?.crew?.[0]?.px;
-          if (follow && px) map.panTo(pxToLatLng(px));
+          // zoom in on EV1 (at the habitat before the walk starts) and keep the crew centered from then on
+          const px = ctx.getState().sim?.crew?.[0]?.px || data.stopsById.H?.px;
+          if (follow && px) map.setView(pxToLatLng(px), Math.max(map.getZoom(), FOLLOW_ZOOM));
         }
       });
       return box;
