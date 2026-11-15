@@ -1,12 +1,11 @@
 # Marswalk Planner: web app
 
-A static web app for planning and flying a two-person Mars EVA. Three views (top-bar tabs, keys 1–3; the helmet HUD view was removed Nov 14):
+A static web app for planning and flying a two-person Mars EVA. Two views (top-bar tabs, keys 1–2; the helmet HUD and rover views were removed Nov 14):
 
 | View | What it is |
 | --- | --- |
 | **Planner** | Habitat planning: HiRISE map (rust-tinted, 100 m grid), layers, routes, stop previews, safety check |
 | **Astronaut tablet** | What the crew carries: next stop, air left, time home, live map, four glove-sized buttons; full-screen reroute card, link-lost and storm modes |
-| **Rover** | The support rover's camera (a labeled demo frame), confirmed hazards, crew tracking, the reroute it proposed, event log |
 
 A built-in sim walks the crew along the route so the replan and fallback logic can be demonstrated. The presenter
 controls (Play, speed, Reset, scrubber, budget, scenarios) live in the **DEMO ▸** drawer (key `d`). Design notes:
@@ -35,9 +34,9 @@ URL options:
 | Param | Effect |
 | --- | --- |
 | `?data=<path>` | Load data from another folder, relative to `/web/` (default `../data/`) |
-| `?mode=planner\|tablet\|rover` | Start in that view |
+| `?mode=planner\|tablet` | Start in that view |
 | `?t=<min>` | Seek the sim to that time after load (e.g. `?mode=tablet&t=24`) |
-| `?fault=link,air,storm,hazard` | Turn faults on from the start (e.g. `?mode=rover&fault=hazard&t=97`) |
+| `?fault=link,air,storm,hazard` | Turn faults on from the start (e.g. `?mode=tablet&fault=hazard&t=97`) |
 | `?slow=1` | Slow pace on from the start (with `?budget=demo&t=40` the tablet shows the reroute card) |
 | `?demo=1` | Open the DEMO console |
 | `?stop=A` | Open the stop preview for A (or B, H) |

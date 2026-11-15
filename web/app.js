@@ -6,7 +6,6 @@ import { initSim } from './sim.js';
 import { initMap } from './map.js';
 import { initPanels } from './panels.js';
 import { initTablet } from './tablet.js';
-import { initRover } from './rover.js';
 import { initPlanner } from './planner.js';
 import { initDemo } from './demo.js';
 
@@ -515,7 +514,7 @@ function toggleKey(key) {
   }
 }
 
-export const MODES = ['planner', 'tablet', 'rover'];
+export const MODES = ['planner', 'tablet'];
 
 export function setMode(mode) {
   if (!MODES.includes(mode)) return;
@@ -679,7 +678,6 @@ function wireMode() {
   const apply = (mode) => {
     document.body.dataset.mode = mode;
     $('#tablet').hidden = mode !== 'tablet';
-    $('#rover').hidden = mode !== 'rover';
   };
   apply(getState().mode);
   subscribe((s, prev, changed) => { if (changed.has('mode')) apply(s.mode); });
@@ -736,7 +734,6 @@ async function boot() {
       map: $('#map'),
       sidePanel: $('#side-panel'),
       tablet: $('#tablet'),
-      rover: $('#rover'),
       toasts: $('#toasts'),
     },
     modules: {},
@@ -758,7 +755,7 @@ async function boot() {
 
   // sim first so state.sim exists before the views render; each init is isolated.
   const inits = [['sim', initSim], ['map', initMap], ['panels', initPanels],
-    ['tablet', initTablet], ['rover', initRover], ['planner', initPlanner], ['demo', initDemo]];
+    ['tablet', initTablet], ['planner', initPlanner], ['demo', initDemo]];
   for (const [name, init] of inits) {
     try {
       ctx.modules[name] = (await init(ctx)) ?? null;

@@ -30,8 +30,9 @@ export function initDemo(ctx) {
       if (st) setTimeout(() => ctx.emit('map:focus', { px: st.px, zoom: 1 }), 0);
     }
     if (t.dataset.goto) {
-      // app.js has already toggled the key; jump to the view that shows the effect when it was turned ON
-      if (t.getAttribute('aria-pressed') !== 'true' && readToggle(ctx.getState(), t.dataset.toggle)) {
+      // app.js's listener ran first and already flipped the key, so the state now holds the NEW value:
+      // jump to the view that shows the effect when the scenario was just turned ON
+      if (readToggle(ctx.getState(), t.dataset.toggle)) {
         ctx.setMode(t.dataset.goto);
         close();
       }

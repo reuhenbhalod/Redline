@@ -1,5 +1,5 @@
 /* style.css — design tokens, page layout, top bar, demo drawer, buttons, toasts, load error.
-   Owned by app.js. Module styling lives in map.css / panels.css / planner.css / tablet.css / rover.css.
+   Owned by app.js. Module styling lives in map.css / panels.css / planner.css / tablet.css.
    Modules use these tokens (var(--...)) rather than hard-coded colors.
 
    Look ("field instrument", see docs/ui-redesign.md): warm charcoal, hairline panels, one teal signal
@@ -30,7 +30,7 @@
   --danger: #ff5a4f;
   --info: #8ab4ff;
 
-  /* Map / route roles (map.js, tablet.js, rover.js) */
+  /* Map / route roles (map.js, tablet.js) */
   --route-planned: #5eead4;     /* planned variant polyline */
   --route-alt: #b9aea2;         /* other variants, faint dashed */
   --route-active: #ffb547;      /* the route the crew is on now (after a replan) */
@@ -238,10 +238,10 @@ select {
   border-left: 1px solid var(--border); padding: 14px;
 }
 /* Full-screen views fill the viewport below the top bar (sim controls stay usable via DEMO). */
-#tablet, #rover {
+#tablet {
   position: fixed; top: var(--topbar-h); left: 0; right: 0; bottom: 0; z-index: 900; overflow: hidden;
 }
-#tablet, #rover { background: var(--bg); color: var(--text); }
+#tablet { background: var(--bg); color: var(--text); }
 body:not([data-mode="planner"]) #planner { visibility: hidden; }
 
 @media (max-width: 1280px) {
@@ -265,7 +265,6 @@ body:not([data-mode="planner"]) #planner { visibility: hidden; }
   display: flex; flex-direction: column; gap: 6px; max-width: 340px; pointer-events: none;
 }
 body[data-mode="tablet"] #toasts { display: none; }
-body[data-mode="rover"] #toasts { right: 14px; }
 @media (max-width: 760px) { #toasts { right: 14px; } }
 .toast {
   pointer-events: auto; background: var(--glass); border: 1px solid var(--border);

@@ -1,4 +1,4 @@
-// minimap.js — a small SVG map on the HiRISE basemap that follows a point (used by tablet.js and rover.js).
+// minimap.js — a small SVG map on the HiRISE basemap that follows a point (used by tablet.js).
 // Coordinates are grid px (y down), so the SVG viewBox uses px directly (INTERFACES.md "Coordinates").
 // Build once, then call the returned setters every frame; they skip work when nothing changed.
 
