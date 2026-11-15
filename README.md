@@ -32,7 +32,7 @@ NASA_API_KEY=... .venv/bin/python pipeline/05_env.py   # DONKI with a real key (
 
 ### Notes for the other roles
 
-- **Engine:** load `data/grids.npz` (see `grids_readme.json`) and `data/safety_params.json`. `nogo` is slope > 20°, roughness > 0.5 m or no data. **Sand is a cost, never a no-go**: the depot itself sits on mapped bedforms. Speed model and factors are in `safety_params.json` (`slope_speed_model`, `speed_factor_*`).
+- **Engine:** start with the [Engine guide](docs/engine_guide.md) and run `examples/engine_quickstart.py`. Load `data/grids.npz` (see `grids_readme.json`) and `data/safety_params.json`. `nogo` is slope > 20°, roughness > 0.5 m or no data. **Sand is a cost, never a no-go**: the depot itself sits on mapped bedforms. Speed model and factors are in `safety_params.json` (`slope_speed_model`, `speed_factor_*`).
 - **App:** overlays in `data/layers/` with legends and sources in `layers.json`. Rover path in `rover_path.json`. Photos per stop in `photos.json` (`featured` = official mosaics, `candidates` = filtered raw frames; pick in Story). Tube close-ups in `depot.json`.
 - **Story:** `env_data.json` has every number with its source and time frame. Dust is an **estimate** (τ ≈ 0.34, range 0.16–0.53). Radiation is Curiosity at Gale (**stand-in**, ~219 µGy/day). Space weather is live from DONKI.
 
