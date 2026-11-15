@@ -20,7 +20,7 @@ from skimage.draw import line as draw_line
 from skimage.graph import MCP_Flexible, MCP_Geometric
 from skimage.measure import approximate_polygon
 
-import config as default_cfg
+import engine_config as default_cfg
 
 HERE = "@"  # pseudo-stop id for "the crew's current position" in mid-leg options
 
@@ -35,6 +35,7 @@ class Layers:
     rough: np.ndarray                # float 0..1, 1 = very rough ground
     nogo: np.ndarray                 # bool, True = never walk here (data gaps, known hazards)
     dtm: np.ndarray | None = None    # float meters (optional): uphill/downhill timing, roughness
+    speed_factor: np.ndarray | None = None  # per-cell speed multiplier (real data: sand / rocky factors)
 
     @property
     def shape(self):
@@ -120,7 +121,7 @@ def blocked_mask(layers: Layers, cfg=default_cfg) -> np.ndarray:
     return (
         layers.nogo
         | ~np.isfinite(s)
-        | (np.nan_to_num(s, nan=90.0) >= cfg.SLOPE_HARD_DEG)
+        | (np.nan_to_num(s, nan=90.0) > cfg.SLOPE_HARD_DEG)
         | ~np.isfinite(layers.sand)
         | ~np.isfinite(layers.rough)
     )
@@ -137,7 +138,14 @@ def _clean(a):
     return np.nan_to_num(a, nan=0.0).clip(0, 1)
 
 
-def speed_m_per_min(slope_deg, cfg=default_cfg, sand=0.0, rough=0.0, grade=None):
+def terrain_factor(layers: "Layers", cfg=default_cfg) -> np.ndarray:
+    """Per-cell walking-speed multiplier from ground type (1.0 = normal ground)."""
+    if layers.speed_factor is not None:
+        return layers.speed_factor.astype(np.float64)
+    return (1 - cfg.SAND_SLOWDOWN * _clean(layers.sand)) * (1 - cfg.ROUGH_SLOWDOWN * _clean(layers.rough))
+
+
+def speed_m_per_min(slope_deg, cfg=default_cfg, sand=0.0, rough=0.0, grade=None, factor=None):
     """Suited walking speed (m/min).
 
     Without `grade`: Tobler shape on the slope magnitude (direction unknown).
@@ -153,7 +161,7 @@ def speed_m_per_min(slope_deg, cfg=default_cfg, sand=0.0, rough=0.0, grade=None)
     else:
         g = np.clip(grade, -max_tan, max_tan)
         f = np.exp(-cfg.TOBLER_K * np.abs(g + cfg.TOBLER_OFFSET)) / math.exp(-cfg.TOBLER_K * cfg.TOBLER_OFFSET)
-    terrain = (1 - cfg.SAND_SLOWDOWN * _clean(sand)) * (1 - cfg.ROUGH_SLOWDOWN * _clean(rough))
+    terrain = factor if factor is not None else (1 - cfg.SAND_SLOWDOWN * _clean(sand)) * (1 - cfg.ROUGH_SLOWDOWN * _clean(rough))
     return v0 * f * terrain
 
 
@@ -195,7 +203,7 @@ def _cost(layers, blocked, walk_blocked, cfg):
 
 
 def _time(layers, walk_blocked, cfg):
-    t = (cfg.PIXEL_M / speed_m_per_min(layers.slope_deg, cfg, layers.sand, layers.rough)).astype(np.float64)
+    t = (cfg.PIXEL_M / speed_m_per_min(layers.slope_deg, cfg, factor=terrain_factor(layers, cfg))).astype(np.float64)
     t[walk_blocked] = np.inf
     return t
 
@@ -236,8 +244,7 @@ class _HomeMCP(MCP_Flexible):
     def __init__(self, idx, layers: Layers, cfg):
         super().__init__(idx, fully_connected=True)
         self.z = np.nan_to_num(layers.dtm.astype(np.float64), nan=0.0).ravel()
-        self.terr = ((1 - cfg.SAND_SLOWDOWN * _clean(layers.sand))
-                     * (1 - cfg.ROUGH_SLOWDOWN * _clean(layers.rough))).ravel().astype(np.float64)
+        self.terr = terrain_factor(layers, cfg).ravel().astype(np.float64)
         self.v0 = cfg.V_FLAT_KMH * 1000 / 60
         self.k, self.off, self.pm = cfg.TOBLER_K, cfg.TOBLER_OFFSET, cfg.PIXEL_M
         self.norm = math.exp(-cfg.TOBLER_K * cfg.TOBLER_OFFSET)
@@ -256,19 +263,32 @@ def time_home(layers: Layers, habitat_xy, cfg=default_cfg) -> np.ndarray:
 
 
 def encode_time_home(minutes: np.ndarray, stride: int):
-    """Downsample and pack as little-endian uint16 tenths of a minute (65535 = unreachable)."""
-    m = minutes[::stride, ::stride]
+    """Pack the time-home grid for the browser and backpack (conservative, per docs/engine_guide.md 9).
+
+    Each stride x stride block takes the MAX of its cells, rounded UP to whole minutes,
+    as little-endian uint16; 65535 = unreachable (any unreachable cell makes the block unreachable).
+    """
+    h, w = minutes.shape
+    H, W = -(-h // stride), -(-w // stride)
+    pad = np.full((H * stride, W * stride), np.inf)
+    pad[:h, :w] = minutes
+    m = pad.reshape(H, stride, W, stride).max(axis=(1, 3))
     out = np.full(m.shape, 65535, dtype="<u2")
     ok = np.isfinite(m)
-    out[ok] = np.clip(np.round(m[ok] * 10), 0, 65534).astype("<u2")
+    out[ok] = np.clip(np.ceil(m[ok] - 1e-9), 0, 65534).astype("<u2")
     meta = {
-        "width": int(m.shape[1]),
-        "height": int(m.shape[0]),
+        # format as specified in docs/engine_guide.md section 9
+        "dtype": "uint16 little-endian",
+        "shape": [int(H), int(W)],
+        "cell_m": None,  # filled in by plan_routes (stride * pixel_m)
+        "unreachable": 65535,
+        "index": f"value[row][col], row = floor(y_px / {stride}), col = floor(x_px / {stride}); minutes, rounded up, max of the block",
+        # same information in the keys the web app reads
+        "width": int(W),
+        "height": int(H),
         "stride_px": int(stride),
-        "dtype": "uint16le",
-        "scale_min": 0.1,
+        "scale_min": 1.0,
         "nodata": 65535,
-        "index": "value at grid pixel [x, y] = data[(y // stride) * width + (x // stride)] * scale_min",
     }
     return out, meta
 
@@ -326,12 +346,13 @@ def leg_clock(path_rc: np.ndarray, layers: Layers, cfg=default_cfg) -> np.ndarra
     step_m = np.hypot(*np.diff(p, axis=0).T) * cfg.PIXEL_M
     mid = lambda a: (a[:-1] + a[1:]) / 2
     slope = mid(np.nan_to_num(layers.slope_deg[r, c], nan=0.0))
+    fac = mid(terrain_factor(layers, cfg)[r, c]) if layers.speed_factor is not None else None
     sand, rough = mid(_clean(layers.sand[r, c])), mid(_clean(layers.rough[r, c]))
     grade = None
     if layers.dtm is not None and cfg.ASYMMETRIC_WALK:
         z = layers.dtm[r, c].astype(np.float64)
         grade = np.nan_to_num(np.diff(z) / step_m, nan=0.0)
-    v = speed_m_per_min(slope, cfg, sand, rough, grade)
+    v = speed_m_per_min(slope, cfg, sand, rough, grade, factor=fac)
     return np.r_[0.0, np.cumsum(step_m / v)]
 
 
@@ -432,7 +453,8 @@ def why_items(leg: Leg, terrain: Terrain, stops: dict[str, dict]) -> list[tuple[
     hazards = [
         ("no-go ground", blocked),
         ("steep slope", (slope >= cfg.SLOPE_SOFT_DEG) & ~blocked),
-        ("soft sand", (np.nan_to_num(layers.sand) >= cfg.SAND_SOFT_MIN) & ~blocked),
+        (getattr(cfg, "SAND_LABEL", "soft sand"), (np.nan_to_num(layers.sand) >= cfg.SAND_SOFT_MIN) & ~blocked),
+        ("blocky rock", (np.nan_to_num(layers.rough) >= 0.99) & ~blocked),
     ]
     pr, pc = leg.path_rc[:, 0], leg.path_rc[:, 1]
     step_m = np.r_[0, np.hypot(*np.diff(leg.path_rc, axis=0).T)] * cfg.PIXEL_M
@@ -885,6 +907,7 @@ def plan_routes(layers: Layers, stops_list: list[dict], cfg=default_cfg):
     solver = LegSolver(terrain, stops)
     th = time_home_from(terrain, stops[cfg.HABITAT_ID]["px"])
     th_bytes, th_meta = encode_time_home(th, cfg.TIME_HOME_STRIDE)
+    th_meta["cell_m"] = cfg.TIME_HOME_STRIDE * cfg.PIXEL_M
     out_variants = [build_variant(v, solver, terrain, stops, th) for v in variants]
 
     routes = {
@@ -1017,6 +1040,7 @@ def coarsen_layers(layers: Layers, k: int) -> Layers:
         rough=blocks(layers.rough).mean(axis=(1, 3)),
         nogo=blocks(layers.nogo).any(axis=(1, 3)),
         dtm=None if layers.dtm is None else blocks(layers.dtm).mean(axis=(1, 3)),
+        speed_factor=None if layers.speed_factor is None else blocks(layers.speed_factor).min(axis=(1, 3)),
     )
 
 
@@ -1057,3 +1081,89 @@ def plan_routes_coarse(layers: Layers, stops_list: list[dict], k: int, cfg=defau
     routes["warnings"].append(f"planned on a {cfg.PIXEL_M * k:g} m grid (coarsened by {k})")
     snapped = [{**s, "px": [c * k + k // 2 for c in s["px"]]} for s in snapped]
     return routes, th_bytes, th, snapped, legs
+
+
+# --- Real data (docs/engine_guide.md) -----------------------------------------------
+
+SAND_LEVEL = {0: 0.0, 1: 0.5, 2: 1.0}  # sand class -> 0..1 for the cost grid (1 = large ridges)
+
+
+def load_real(data_dir="data", cfg=default_cfg):
+    """Load the Data pipeline's files. Returns (layers, stops_list, cfg_for_this_data, info).
+
+    Numbers come from data/safety_params.json, so they always match the pipeline:
+    hard/soft slope, flat walking speed, sand and rocky speed factors, suit budget,
+    reserve and work times. Sand only slows the crew and never blocks; no-go is the
+    pipeline's precomputed mask.
+    """
+    import json
+    d = Path(data_dir)
+    g = np.load(d / "grids.npz")
+    P = {k: v["value"] for k, v in json.loads((d / "safety_params.json").read_text())["params"].items()}
+    site = json.loads((d / "site.json").read_text())
+    photos = json.loads((d / "photos.json").read_text()) if (d / "photos.json").exists() else {}
+    tubes = json.loads((d / "depot.json").read_text()) if (d / "depot.json").exists() else []
+
+    sand_cls = g["sand"].astype(np.int16)
+    rocky = g["rocky"].astype(bool)
+    factor = np.ones(sand_cls.shape, np.float32)
+    factor[sand_cls == 1] *= P["speed_factor_sand_small"]
+    factor[sand_cls == 2] *= P["speed_factor_sand_large"]
+    factor[rocky] *= P["speed_factor_rocky"]
+    rough_m = g["rough_m"].astype(np.float32)
+    layers = Layers(
+        slope_deg=g["slope_deg"].astype(np.float32),
+        sand=np.vectorize(SAND_LEVEL.get, otypes=[np.float32])(sand_cls) if sand_cls.max() <= 2 else (sand_cls > 0).astype(np.float32),
+        # cost: blocky units count fully, otherwise relief relative to the no-go limit
+        rough=np.maximum(rocky.astype(np.float32), np.nan_to_num(rough_m / P["rough_hard_m"]).clip(0, 0.9)),
+        nogo=g["nogo"].astype(bool),
+        dtm=g["elevation_m"].astype(np.float32),
+        speed_factor=factor,
+    )
+    rcfg = config_copy(
+        cfg,
+        SLOPE_SOFT_DEG=float(P["slope_soft_deg"]), SLOPE_HARD_DEG=float(P["slope_hard_deg"]),
+        V_FLAT_KMH=float(P["walk_speed_flat_kmh"]),
+        SUIT_BUDGET_MIN=float(P["suit_budget_min"]), SUIT_RESERVE_MIN=float(P["reserve_min"]),
+        DEFAULT_WORK_MIN={"base": 0, "science": float(P["work_min_science_stop"]), "depot": float(P["work_min_depot"])},
+        SAND_LABEL="sand ridges",
+    )
+
+    def pics(k, n=6):
+        e = photos.get(k) or {}
+        feat = [p["url"] for p in e.get("featured", []) if p.get("url")]
+        cand = [p.get("url") for p in e.get("candidates", []) if p.get("url")]
+        return (feat + cand)[:n]
+
+    def sol_of(k):
+        e = photos.get(k) or {}
+        return (e.get("candidates") or [{}])[0].get("sol")
+
+    h, a, b = site["habitat"], site["stop_a"], site["depot_center"]
+    minerals = []
+    if a.get("clay_frac"):
+        minerals.append(f"Fe/Mg clay ({a['clay_frac']:.0%} of the work area)")
+    if a.get("carb_frac"):
+        minerals.append(f"carbonate ({a['carb_frac']:.0%} of the work area)")
+    cored = ", ".join(a.get("depot_samples_cored_here") or [])
+    stops = [
+        {"id": "H", "name": "Habitat", "kind": "base", "px": h["px"],
+         "why": f"Pressurized habitat on flat ground ({h.get('mean_slope_100m_deg', '?')}° mean slope within 100 m), "
+                f"{h.get('stack_unit', '')}, {h.get('dist_to_depot_m', '?')} m from the depot".strip(", "),
+         "expect": (photos.get("H") or {}).get("note") or "", "rock_unit": h.get("stack_unit", ""),
+         "photos": pics("H"), "sol": sol_of("H")},
+        {"id": "A", "name": "Delta outcrop", "kind": "science", "px": a["px"],
+         "work_min": float(P["work_min_science_stop"]), "sol": a.get("sol"),
+         "why": f"{a.get('stack_unit', 'Delta')} bedrock at the delta front, where CRISM maps clay minerals that form in water "
+                f"and can preserve signs of past life" + (f". Perseverance cored {cored} here" if cored else ""),
+         "expect": f"Layered sediments; slopes under {a.get('hirise_slope_p90_deg', '?')}° across the work area "
+                   f"(90th percentile), no sand",
+         "minerals": ", ".join(minerals), "rock_unit": a.get("stack_unit", ""), "photos": pics("A")},
+        {"id": "B", "name": "Three Forks depot", "kind": "depot", "px": b["px"],
+         "work_min": float(P["work_min_depot"]), "sol": 653,
+         "why": f"Three Forks sample depot: retrieve the {len(tubes) or 10} cached sample tubes for return to Earth",
+         "expect": f"{len(tubes) or 10} tubes spread over about {b.get('tube_spread_m', 35)} m on flat ground",
+         "rock_unit": "", "photos": pics("B"), "tubes": len(tubes)},
+    ]
+    info = {"params": P, "site": site, "tubes": tubes}
+    return layers, stops, rcfg, info

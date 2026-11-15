@@ -385,10 +385,14 @@ export function initSim(ctx) {
       if (!d) continue;
       const ahead = stopsAheadAt(a, st0.routeT);
       if (!ahead.includes(d.leg[1])) continue;
+      // only on that leg: after leaving leg[0] (if it is still on this route) and before reaching
+      // leg[1]. Routes can retrace earlier legs, so the trigger pixel may also appear before.
+      const end = a.stopMarks.find((m) => m.id === d.leg[1] && m.arriveMin > st0.routeT + EPS);
+      const start = a.stopMarks.filter((m) => m.id === d.leg[0] && end && m.departMin <= end.arriveMin).pop();
+      const fromT = Math.max(st0.routeT + EPS, start ? start.departMin : -Infinity);
       for (let j = 0; j < a.path.length; j++) {
-        if (samePx(a.path[j], d.trigger_px) && a.tMin[j] > st0.routeT + EPS) {
-          return { at: a.tMin[j], demo: d, variantId: v.id };
-        }
+        if (a.tMin[j] < fromT || (end && j > end.pathIndex)) continue;
+        if (samePx(a.path[j], d.trigger_px)) return { at: a.tMin[j], demo: d, variantId: v.id };
       }
     }
     return null;

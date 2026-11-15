@@ -1,15 +1,17 @@
-"""Step 4: cost grid, legs, route variants, replan options, time-home grid
--> routes.json + time_home.bin (and snapped stop positions back into stops.json).
+"""Step 7 (Engine): cost grid, legs, route variants, replan options, time-home grid.
 
-Real layers (from Data, steps 1-3):
-    python pipeline/04_routes.py --grid work/grid --stops data/stops.json --out data
+Real data from the Data pipeline (data/grids.npz, site.json, safety_params.json, photos.json):
+    python pipeline/07_routes.py --preview          # -> data/routes.json, data/time_home.bin, data/stops.json
 
 Fake hilly terrain (no Data needed):
-    python pipeline/04_routes.py --fake --preview
-    python pipeline/04_routes.py --fake --scenario sand_maze --preview
+    python pipeline/07_routes.py --fake --preview
+    python pipeline/07_routes.py --fake --scenario sand_maze --preview
 
-If pathfinding is too slow on the real grid:
-    python pipeline/04_routes.py --coarsen 3        # plan on a 6 m grid, output full-grid pixels
+Older .npy grid folder:
+    python pipeline/07_routes.py --grid work/grid --stops data/stops.json
+
+If pathfinding is too slow:
+    python pipeline/07_routes.py --coarsen 3        # plan on a 6 m grid, output full-grid pixels
 """
 from __future__ import annotations
 
@@ -22,7 +24,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-import config as cfg  # noqa: E402
+import engine_config as cfg  # noqa: E402
 import engine  # noqa: E402
 import fake_terrain  # noqa: E402
 
@@ -92,7 +94,8 @@ def main(argv=None):
     ap.add_argument("--fake", action="store_true", help="generate fake terrain into work/fake and route on it")
     ap.add_argument("--scenario", default="default", choices=list(fake_terrain.SCENARIOS), help="fake terrain scenario")
     ap.add_argument("--size", type=int, default=cfg.GRID_SIZE_PX, help="fake grid size (px)")
-    ap.add_argument("--grid", default="work/grid", help="folder with slope_deg.npy [sand, rough, nogo, dtm].npy")
+    ap.add_argument("--data", default="data", help="Data pipeline output folder (grids.npz, site.json, ...)")
+    ap.add_argument("--grid", default=None, help="folder with slope_deg.npy [sand, rough, nogo, dtm].npy (instead of --data)")
     ap.add_argument("--stops", default="data/stops.json")
     ap.add_argument("--env", default="data/env.json", help="read suit budget from here if present")
     ap.add_argument("--bounds", default="data/bounds.json", help="check the grid against this if present")
@@ -102,38 +105,57 @@ def main(argv=None):
     ap.add_argument("--preview", action="store_true", help="also write routes_preview.png for eyeballing")
     args = ap.parse_args(argv)
 
-    if args.fake:
-        fake_dir = Path("work/fake") / ("" if args.scenario == "default" else args.scenario)
-        grid = fake_terrain.write_fake(fake_dir, size=args.size, scenario=args.scenario)
-        stops_path = grid / "stops.json"
-        out = Path(args.out or fake_dir / "out")
-        bounds_path = None
-    else:
-        grid, stops_path, out = Path(args.grid), Path(args.stops), Path(args.out or "data")
-        bounds_path = Path(args.bounds)
-
+    real = not args.fake and args.grid is None and (Path(args.data) / "grids.npz").exists()
+    rcfg = cfg
     timings = {}
     t0 = time.time()
-    layers = engine.load_layers(grid)
-    if bounds_path and bounds_path.exists():
-        engine.check_bounds(json.loads(bounds_path.read_text()), layers)
-    stops = json.loads(Path(stops_path).read_text())
+    if real:
+        grid = Path(args.data) / "grids.npz"
+        layers, stops, rcfg, info = engine.load_real(args.data)
+        out = Path(args.out or args.data)
+        engine.check_bounds(json.loads((Path(args.data) / "bounds.json").read_text()), layers, rcfg)
+    else:
+        if args.fake:
+            fake_dir = Path("work/fake") / ("" if args.scenario == "default" else args.scenario)
+            grid = fake_terrain.write_fake(fake_dir, size=args.size, scenario=args.scenario)
+            stops_path = grid / "stops.json"
+            out = Path(args.out or fake_dir / "out")
+            bounds_path = None
+        else:
+            grid, stops_path, out = Path(args.grid or "work/grid"), Path(args.stops), Path(args.out or "data")
+            bounds_path = Path(args.bounds)
+        layers = engine.load_layers(grid)
+        if bounds_path and bounds_path.exists():
+            engine.check_bounds(json.loads(bounds_path.read_text()), layers)
+        stops = json.loads(Path(stops_path).read_text())
     timings["load"] = time.time() - t0
 
     t1 = time.time()
     if args.coarsen > 1:
-        routes, th_bytes, th, snapped, _ = engine.plan_routes_coarse(layers, stops, args.coarsen)
+        routes, th_bytes, th, snapped, _ = engine.plan_routes_coarse(layers, stops, args.coarsen, rcfg)
     else:
-        routes, th_bytes, th, snapped, _ = engine.plan_routes(layers, stops)
+        routes, th_bytes, th, snapped, _ = engine.plan_routes(layers, stops, rcfg)
     timings["plan"] = time.time() - t1
 
-    budget, reserve = load_env_budget(Path(args.env))
+    if real:
+        budget, reserve = float(rcfg.SUIT_BUDGET_MIN), float(rcfg.SUIT_RESERVE_MIN)
+    else:
+        budget, reserve = load_env_budget(Path(args.env))
     engine.finalize(routes, budget, reserve)
-    size = engine.write_outputs(out, routes, th_bytes, (layers.shape[1], layers.shape[0]))
-    moved = [] if args.no_write_stops else write_back_stops(Path(stops_path), snapped)
+    if real:
+        routes["sources"] = ["data/grids.npz", "data/safety_params.json", "data/site.json"]
+    size = engine.write_outputs(out, routes, th_bytes, (layers.shape[1], layers.shape[0]), rcfg)
+    if real:
+        # Engine owns stops.json (positions from site.json, photos from photos.json, snapped px)
+        (out / "stops.json").write_text(json.dumps(snapped, indent=1, ensure_ascii=False))
+        moved = [w for w in routes["warnings"] if "moved" in w]
+    else:
+        moved = [] if args.no_write_stops else write_back_stops(Path(stops_path), snapped)
     if args.preview:
-        cost = engine.cost_grid(layers) if args.coarsen == 1 else engine.cost_grid(engine.coarsen_layers(layers, args.coarsen))
-        write_preview(out / "routes_preview.png", layers, routes, th if args.coarsen == 1 else np.kron(th, np.ones((args.coarsen,) * 2)), cost)
+        cost = engine.cost_grid(layers, rcfg) if args.coarsen == 1 else engine.cost_grid(engine.coarsen_layers(layers, args.coarsen), rcfg)
+        prev_dir = Path("pipeline/qa") if real else out
+        prev_dir.mkdir(parents=True, exist_ok=True)
+        write_preview(prev_dir / "routes_preview.png", layers, routes, th if args.coarsen == 1 else np.kron(th, np.ones((args.coarsen,) * 2)), cost)
 
     print(f"grid {layers.shape[1]}x{layers.shape[0]} from {grid}: load {timings['load']:.1f}s, plan {timings['plan']:.1f}s")
     if timings["plan"] > 60 and args.coarsen == 1:
@@ -151,8 +173,10 @@ def main(argv=None):
         print("  WARNING:", w)
     for m in moved:
         print("  stops.json px updated:", m)
+    if real:
+        print(f"wrote {out / 'stops.json'}")
     print(f"wrote {out / 'routes.json'} ({size / 1024:.0f} KB), {out / 'time_home.bin'}"
-          + (", routes_preview.png" if args.preview else ""))
+          + (f", {'pipeline/qa' if real else out}/routes_preview.png" if args.preview else ""))
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 """Write a complete FAKE data/ folder with every contract file, so the web app can be built
 before Data and Story deliver. Real pipeline outputs overwrite these files.
 
-    python pipeline/fake_export.py            # -> data/
+    python pipeline/fake_export.py            # -> work/fakedata/  (open the app with ?data=../work/fakedata/)
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-import config as cfg  # noqa: E402
+import engine_config as cfg  # noqa: E402
 import engine  # noqa: E402
 import fake_terrain  # noqa: E402
 
@@ -31,7 +31,9 @@ def hillshade(dtm: np.ndarray, az=315, alt=40) -> np.ndarray:
     return np.clip(np.sin(alt) * np.cos(slope) + np.cos(alt) * np.sin(slope) * np.cos(az - aspect), 0, 1)
 
 
-def main(out_dir="data", size=cfg.GRID_SIZE_PX):
+def main(out_dir="work/fakedata", size=cfg.GRID_SIZE_PX):
+    if (Path(out_dir) / "grids.npz").exists():
+        raise SystemExit(f"{out_dir} holds REAL pipeline data (grids.npz); refusing to overwrite it with fake files")
     import matplotlib
     matplotlib.use("Agg")
 

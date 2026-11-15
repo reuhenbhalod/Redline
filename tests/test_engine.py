@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pipeline"))
-import config as cfg  # noqa: E402
+import engine_config as cfg  # noqa: E402
 import engine  # noqa: E402
 import fake_terrain  # noqa: E402
 
@@ -26,7 +26,8 @@ def stops(h, a, b):
 
 def test_hard_slope_and_missing_data_are_infinite():
     L = flat(40)
-    L.slope_deg[2, 2] = cfg.SLOPE_HARD_DEG
+    L.slope_deg[2, 2] = cfg.SLOPE_HARD_DEG + 0.1  # no-go is slope > hard limit (pipeline definition)
+    L.slope_deg[20, 20] = cfg.SLOPE_HARD_DEG       # exactly at the limit is still walkable
     L.slope_deg[3, 3] = np.nan
     c = engine.cost_grid(L)
     assert np.isinf(c[2, 2]) and np.isinf(c[3, 3])
@@ -301,3 +302,20 @@ def test_time_home_matches_walk_home_with_dtm():
     sym = engine.time_home_from(engine.build_terrain(engine.Layers(slope, sand, rough, nogo)), full["stop_plan"][0]["id"] and routes["stops_px"]["H"])
     x, y = routes["stops_px"][last["from"]]
     assert b["home_min"] < sym[y, x]
+
+
+def test_real_data_matches_engine_guide():
+    """docs/engine_guide.md reference numbers: full ~3120 m / 186 min, skipA ~2566 m / 117 min."""
+    from pathlib import Path
+    data = Path(__file__).resolve().parents[1] / "data"
+    if not (data / "grids.npz").exists():
+        pytest.skip("real data not present")
+    layers, st, rcfg, info = engine.load_real(data)
+    assert not engine.blocked_mask(layers, rcfg)[[round(s["px"][1]) for s in st], [round(s["px"][0]) for s in st]].any()
+    routes, th_bytes, *_ = engine.plan_routes(layers, st, rcfg)
+    v = {x["id"]: x for x in routes["variants"]}
+    assert v["full"]["distance_m"] == pytest.approx(3120, rel=0.03)
+    assert v["full"]["est_min"] == pytest.approx(186, abs=5)
+    assert v["skipA"]["est_min"] == pytest.approx(117, abs=5)
+    assert routes["time_home"]["shape"] == [1000, 1000] and len(th_bytes) == 2 * 1000 * 1000
+    assert engine.validate_routes(routes, (2000, 2000)) == []

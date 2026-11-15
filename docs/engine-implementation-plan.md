@@ -24,7 +24,7 @@ Status key: `[x]` done on the branch · `[ ]` to do · *(stretch)* = only if tim
 | 9 | Why-lines (explanations) | 5, 6 | done | Sat 4 pm |
 | 10 | Export and contract checks | 6–9 | done | Sat 4 pm |
 | 11 | Visual QA and tuning | 10 | fake done, redo on real data | Sat 4–6 pm |
-| 12 | Real-data cutover | Data hand-off | to do | Sat 2–6 pm |
+| 12 | Real-data cutover | Data hand-off | done; retune on real data still open | Sat 2–6 pm |
 | 13 | Live hazard reroute demo | 5 | done (fake) | Sun AM |
 
 Go/no-go (Sat 6 pm): a route drawn on the real Three Forks elevation map. Components 1–7, 10 and 12
@@ -41,10 +41,10 @@ Goal: realistic stand-in layers so the engine can be built and tested before rea
 - [x] 1.3 Soft sand patches, roughness from local elevation variance, and a missing-data block
 - [x] 1.4 Scale feature heights with grid size so small test grids keep realistic slopes
 - [x] 1.5 Fake `stops.json` (H, A, B) placed so `full` fits on time and the replan fires when the crew is slow
-- [x] 1.6 Fixed seeds plus named scenarios (`default`, `easy`, `cliff`, `sand_maze`): `04_routes.py --fake --scenario X`
+- [x] 1.6 Fixed seeds plus named scenarios (`default`, `easy`, `cliff`, `sand_maze`): `07_routes.py --fake --scenario X`
 - [x] 1.7 `pipeline/fake_export.py` writes every contract file (basemap, layers, bounds, stops, routes, env) to `data/`
 
-Done when: `04_routes.py --fake` produces both variants, and each scenario has a test.
+Done when: `07_routes.py --fake` produces both variants, and each scenario has a test.
 
 ## 2. Inputs and validation
 
@@ -59,7 +59,7 @@ Goal: load Data's layers and the stops, and fail loudly on anything misaligned.
 - [x] 2.7 Check value ranges: slope 0–90°, sand and rough 0–1; warn on suspicious stats (e.g. >30% no-go)
 - [x] 2.8 Read `bounds.json` and check the grid size and `pixel_m` match `config.py`
 - [x] 2.9 Optional `dtm.npy` input: compute roughness in the engine if Data doesn't ship `rough.npy`
-- [ ] 2.10 **Agree the input format with Data** (see Open questions)
+- [x] 2.10 Input format agreed: `grids.npz` + `safety_params.json` + `site.json` (docs/engine_guide.md); `engine.load_real`
 
 Done when: a bad or misaligned input stops the run with a clear message.
 
@@ -85,7 +85,7 @@ Goal: realistic minutes per leg, separate from cost. Cost picks the path; time d
 - [x] 4.2 Minutes per cell, used for both leg time and time home
 - [x] 4.3 Work time per stop: from `stops.json`, else a config default by kind
 - [x] 4.4 Slow walking on sand and rough ground too (multiply speed by a factor)
-- [ ] 4.5 Sanity check against the Apollo walking-pace references; cite the source in assumptions
+- [x] 4.5 Walking speed, speed factors and budget come from `safety_params.json` (cited by the Data pipeline)
 - [x] 4.6 Uphill/downhill asymmetry (true Tobler) on leg times when `dtm.npy` is provided; time-home stays direction-free (stated as an assumption)
 
 Done when: a flat 1 km leg takes about 30 min, and sloped legs take visibly longer.
@@ -191,12 +191,12 @@ Done when: the team agrees the route on the real map looks sensible.
 
 Goal: switch from fake to real layers with no code changes.
 
-- [ ] 12.1 Get the first real `work/grid/` from Data; run 2.7–2.8 checks
-- [ ] 12.2 Place real stops: habitat on flat ground, A on the CRISM carbonate/clay outcrop, B at the Three Forks tubes
-- [ ] 12.3 Run the engine; check routes against rover tracks and the basemap
+- [x] 12.1 Real data loaded from `data/`; range and bounds checks pass
+- [x] 12.2 Stops from `site.json` (habitat, stop A on Delta thinly layered clay, depot center)
+- [x] 12.3 Engine run on real data matches the guide's reference engine (full 3134 m / 186 min vs 3120 / 186)
 - [ ] 12.4 Fix alignment problems in pixel coordinates first (the risks table's early sign)
 - [ ] 12.5 Retune weights (11.3) and the suit budget so `full` fits normally and `skipA` covers the slow-pace demo
-- [ ] 12.6 Commit `data/routes.json` and `time_home.bin`; hand off to App by 6 pm
+- [x] 12.6 `data/routes.json`, `time_home.bin`, `stops.json` written and committed
 - [ ] 12.7 Fallback if late: CTX 20 m elevation, or a hand-drawn route (per the risks table)
 
 Done when: the go/no-go check passes.

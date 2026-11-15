@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from scipy.ndimage import gaussian_filter, uniform_filter
 
-import config as cfg
+import engine_config as cfg
 
 # Named scenarios for tests and demos. "default" is what data/ is built from.
 SCENARIOS = {

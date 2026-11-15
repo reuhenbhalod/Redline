@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-import config as cfg  # noqa: E402
+import engine_config as cfg  # noqa: E402
 import engine  # noqa: E402
 import fake_terrain  # noqa: E402
 

@@ -56,38 +56,32 @@ HiRISE: NASA/JPL/University of Arizona. CTX: NASA/JPL/MSSS. USGS Astrogeology (M
 
 The data pipeline code was written with AI assistance (Claude). All data values come from the listed sources; every processing step is in `pipeline/` and reproducible with one command.
 
-## Route engine (`pipeline/04_routes.py`)
+## Route engine (`pipeline/07_routes.py`)
 
 Turns the aligned terrain layers into a cost grid, finds the cheapest safe path for each leg,
 precomputes every route variant, and writes `routes.json` + `time_home.bin` for the web app.
 
 ```bash
 pip install -r requirements.txt
-python pipeline/fake_export.py                    # FAKE data/ folder with every contract file (for the web app)
-python pipeline/04_routes.py --fake --preview     # fake hilly terrain -> work/fake/out/
-python pipeline/04_routes.py --fake --scenario sand_maze --preview   # also: easy, cliff
-python pipeline/04_routes.py                      # real layers in work/grid/ -> data/
-python pipeline/04_routes.py --coarsen 3          # if pathfinding is slow: plan on a 6 m grid
+python pipeline/fake_export.py work/fakedata     # FAKE contract files (never write these over the real data/)
+python pipeline/07_routes.py --preview           # REAL data (data/grids.npz ...) -> data/routes.json, time_home.bin, stops.json
+python pipeline/07_routes.py --fake --preview     # fake hilly terrain -> work/fake/out/
+python pipeline/07_routes.py --fake --scenario sand_maze --preview   # also: easy, cliff
+python pipeline/07_routes.py --coarsen 3          # if pathfinding is slow: plan on a 6 m grid
 python pipeline/tune_weights.py --fake            # compare cost-weight sets -> work/tune/weights.png
 python -m pytest tests
 ```
 
-**Inputs** (from the Data pipeline, all 2000×2000 and aligned to the 2 m grid, in `work/grid/`):
+**Inputs** (from the Data pipeline, see [docs/engine_guide.md](docs/engine_guide.md)): `data/grids.npz`
+(slope, elevation, roughness, sand classes, rocky, no-go), `safety_params.json` (speeds, speed factors, slope
+limits, suit budget, reserve, work times: the engine reads every number from here), `site.json` (stop positions),
+`photos.json` and `depot.json` (for `stops.json`). Engine-only knobs (cost weights, safety buffer, checkpoints,
+hazard demo) are in `pipeline/engine_config.py`; `pipeline/config.py` belongs to the Data pipeline.
 
-| File | Type | Meaning |
-| --- | --- | --- |
-| `slope_deg.npy` | float32, degrees, NaN = no data | required |
-| `sand.npy` | float32 0..1, 1 = soft sand | optional |
-| `rough.npy` | float32 0..1, 1 = very rough | optional |
-| `nogo.npy` | bool | optional, extra no-go cells |
-| `dtm.npy` | float32 meters | optional: uphill/downhill leg times, and roughness if `rough.npy` is missing |
-
-Plus `data/stops.json` (contract shape) and optionally `data/env.json` for the suit budget.
-
-**Outputs** in `data/`: `routes.json` (contract shape, plus per variant: `legs`, `walk_min`, `work_min`,
+**Outputs** in `data/`: `stops.json` (built from `site.json` + `photos.json`), `routes.json` (contract shape, plus per variant: `legs`, `walk_min`, `work_min`,
 `max_slope_deg`, `fits_budget`, timelines `t_min`/`home_min` parallel to `path`, `stop_plan`, and
-`replan` options at each stop; the browser rule is spelled out in `routes.json → replan_rule`) and `time_home.bin` (little-endian uint16, tenths of a
-minute, 65535 = unreachable, downsampled by `time_home.stride_px`; see `routes.json → time_home`).
+`replan` options at each stop; the browser rule is spelled out in `routes.json → replan_rule`) and `time_home.bin` (1000 × 1000 little-endian uint16, whole minutes rounded up, max of each 2×2 block,
+65535 = unreachable; see `routes.json → time_home`).
 
 Each variant also has mid-leg `checkpoints[]` (drop / head-home options from the crew's position)
 and, for `full`, a scripted `hazard_demo` (rover camera confirms a rock field ahead; detour path).
