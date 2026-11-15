@@ -7,7 +7,7 @@
 
 import { createSmoother } from './smooth.js';
 import {
-  pxToLatLng, latLngToPx, imageBounds, pathToLatLngs, lerpPx, clamp, esc, fmtDistM, fmtMinLong,
+  pxToLatLng, latLngToPx, imageBounds, pathToLatLngs, lerpPx, clamp, esc, fmtDistM, fmtMinLong, fmtMin,
   pxToLonLat, fmtLonLat, basisLabel,
 } from './util.js';
 
@@ -535,6 +535,12 @@ export function initMap(ctx) {
   const proposedLine = L.polyline([], { ...live, color: C.proposed, weight: 5, opacity: 0.95, dashArray: '10 8', className: 'map-route-proposed' });
   const homeLine = L.polyline([], { ...live, color: C.home, weight: 3, opacity: 0.85, dashArray: '2 7' });
   const trailLine = L.polyline([], { ...live, color: C.crew1, weight: 2, opacity: 0.75, dashArray: '1 5' });
+  // Old route given up for a hazard detour (red, under the live route) and the piece a pending detour would drop.
+  const abandonedLayer = L.layerGroup().addTo(map);
+  const pendingAbandoned = L.polyline([], { ...live, color: C.danger, weight: 5, opacity: 0.9, dashArray: '3 7' });
+  // Hazards the crew marked: keep-out ring + pin.
+  const marksLayer = L.layerGroup().addTo(map);
+  let lastAbandonedKey = '', lastMarksKey = '';
   [homeLine, activeWalked, activeRemaining, trailLine, proposedLine].forEach((l) => l.addTo(map));
   // Rover-camera hazard (rock field) once confirmed, and upcoming mid-leg checkpoints.
   const hazardCircle = L.circle(pxToLatLng([0, 0]), {
@@ -641,7 +647,8 @@ export function initMap(ctx) {
     // Active route: walked (dim) + remaining (bright). Color by kind.
     if (a && a.path?.length && sim.status !== 'idle') {
       if (a.id !== lastActiveId) {
-        const color = a.kind === 'abort' || a.kind === 'return' ? C.home : a.kind === 'planned' ? C.planned : C.active;
+        // a hazard detour keeps the normal route colour; the abandoned piece is drawn red (abandonedLayer)
+        const color = a.kind === 'abort' || a.kind === 'return' ? C.home : a.kind === 'planned' || a.kind === 'hazard' ? C.planned : C.active;
         activeWalked.setStyle({ color });
         activeRemaining.setStyle({ color, weight: a.kind === 'planned' ? 5.5 : 6 });
         lastActiveId = a.id;
@@ -663,14 +670,51 @@ export function initMap(ctx) {
       lastActiveId = null; lastSplitKey = '';
     }
 
+    // Abandoned route pieces (red) and marked hazards.
+    const ab = sim?.abandoned || [];
+    const abKey = ab.map((x) => x.t).join(',') + (sim?.status === 'idle' ? 'i' : '');
+    if (abKey !== lastAbandonedKey) {
+      abandonedLayer.clearLayers();
+      for (const x of ab) {
+        L.polyline(pathToLatLngs(x.path), { ...live, interactive: true, color: C.danger, weight: 5, opacity: 0.85 })
+          .bindTooltip(`Old route, abandoned at T+${fmtMin(x.t)}: it crossed a ${x.trigger === 'hazard' ? 'rock field' : 'hazard'}`, { className: 'map-tip', sticky: true })
+          .addTo(abandonedLayer);
+      }
+      lastAbandonedKey = abKey;
+    }
+    const mk = sim?.marks || [];
+    const mkKey = mk.map((m) => m.id).join(',');
+    if (mkKey !== lastMarksKey) {
+      marksLayer.clearLayers();
+      for (const m of mk) {
+        const ll = pxToLatLng(m.px);
+        L.circle(ll, { radius: m.radiusPx, color: C.danger, weight: 1.5, dashArray: '4 4', fillColor: C.danger, fillOpacity: 0.14, interactive: false }).addTo(marksLayer);
+        L.circleMarker(ll, { radius: 6, color: '#1a0605', weight: 2, fillColor: C.danger, fillOpacity: 1 })
+          .bindTooltip(`Hazard marked by the crew at T+${fmtMin(m.t)} · routes keep ${Math.round(m.radiusPx * pixelM)} m clear`, { className: 'map-tip', direction: 'top' })
+          .addTo(marksLayer);
+      }
+      lastMarksKey = mkKey;
+    }
+
     // Pending replan proposal: dashed.
     const pr = sim?.pendingReplan;
     if (pr?.path?.length) {
-      if (pr.id !== lastProposalId) { proposedLine.setLatLngs(pathToLatLngs(pr.path)); lastProposalId = pr.id; }
+      if (pr.id !== lastProposalId) {
+        proposedLine.setLatLngs(pathToLatLngs(pr.path));
+        pendingAbandoned.setLatLngs(pr.abandoned?.length > 1 ? pathToLatLngs(pr.abandoned) : []);
+        lastProposalId = pr.id;
+        // show the detour: frame the old and new paths around the hazard
+        if (pr.hazard && pr.abandoned?.length > 1) {
+          const pts = [...pr.abandoned, ...pr.path.slice(0, Math.min(pr.path.length, 40)), pr.hazard.px];
+          map.fitBounds(L.latLngBounds(pts.map(pxToLatLng)).pad(0.6), { maxZoom: 1.5, animate: false });
+        }
+      }
+      setVisible(pendingAbandoned, !!pr.abandoned?.length);
       setVisible(proposedLine, true);
       proposedLine.bringToFront();
     } else {
       setVisible(proposedLine, false);
+      setVisible(pendingAbandoned, false);
       lastProposalId = null;
     }
 

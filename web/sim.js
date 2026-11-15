@@ -11,10 +11,17 @@ import {
   clamp, lerp, distPx, distM, cumulativeDistM, searchSorted, interpolateOnPath, interpolateArray,
   distanceAt, positionAtDistance, bearingDeg, fmtMin, effectiveBudget,
 } from './util.js';
+import { findDetour, pathSeconds } from './pathfind.js';
 
 const EPS = 1e-9;
 const FAULT_KEYS = ['linkLost', 'highAir', 'storm', 'hazard'];
 const HERE = '@'; // routes.json pseudo-stop: the crew's position at a checkpoint
+// Live detours (pathfind.js on data/walk_time.bin), in grid px (2 m)
+const MARK_AVOID_PX = 20;    // a hazard the crew marks: ~15 m feature + 25 m buffer = 40 m keep-out radius
+const ROCK_BUFFER_PX = 15;   // rover-camera rock field: 30 m buffer beyond its edge
+const LOOKAHEAD_PX = 100;    // warn about a known hazard 200 m ahead on the route
+const LEAVE_PX = 15;
+const addMin = (m) => (m < 1 ? 'under 1 min' : `${Math.round(m)} min`);         // a marked hazard counts once the crew is 30 m clear of its keep-out
 
 // ===========================================================================
 // 1. Pure core
@@ -335,6 +342,9 @@ export function initSim(ctx) {
       storm: { on: false, alertId: null, handled: false, holdAlerted: false },
       cpQueue: [],                       // upcoming mid-leg checkpoints on the active route
       hazard: { armed: false, at: null, demo: null, variantId: null, seen: null, done: false },
+      marks: [],                         // hazards the crew marked: { id, px, t }
+      zoneState: {},                     // per known hazard: { left, route } (see checkZones)
+      abandoned: [],                     // old route pieces given up for a detour: { path, t, trigger }
       seeking: false,
     });
   }
@@ -734,14 +744,30 @@ export function initSim(ctx) {
     const a = S.active;
     const mark = a.stopMarks.slice(S.markIdx).find((m) => m.id === d.leg[1]);
     if (!mark) return;
-    const detour = { path: d.path, tMin: d.t_min, homeMin: d.home_min };
-    const rest = sliceRouteFrom(a.path, a.tMin, a.homeMin, mark.arriveMin);
-    const route = concatRoutes(detour, rest);
+    // live detour with a 30 m buffer around the field (precomputed one as a fallback: it skims the edge)
+    const zone = { id: 'rock', px: d.hazard_px, radiusPx: d.radius_px + ROCK_BUFFER_PX };
+    const live = ctx.walkGrid ? planAround([zone, ...knownZones().filter((z) => z.id !== 'rock')], aheadHit(zone, 400)) : null;
+    let route, abandoned;
+    if (live) {
+      ({ route, abandoned } = live);
+      S.zoneState.rock = { left: true, route: null };
+    } else {
+      const detour = { path: d.path, tMin: d.t_min, homeMin: d.home_min };
+      const rest = sliceRouteFrom(a.path, a.tMin, a.homeMin, mark.arriveMin);
+      route = concatRoutes(detour, rest);
+      const old = sliceRouteFrom(a.path, a.tMin, a.homeMin, S.routeT);
+      abandoned = old.path.filter((_, j) => old.tMin[j] <= mark.arriveMin - S.routeT + EPS);
+    }
     const reb = rebase(route);
     const minutes = route.tMin[route.tMin.length - 1] ?? 0;
     const restMin = (a.tMin[a.tMin.length - 1] ?? 0) - S.routeT;
     const label = `Rock field ahead: detour to ${stopName(d.leg[1])}`;
-    const why = [...(d.why || [])];
+    const extraM = live ? Math.round(live.newM - live.oldM) : null;
+    const why = live ? [
+      `Rover camera confirmed a rock field about ${Math.round(d.radius_px * 2 * pixelM)} m across on ${stopName(d.leg[0])}→${stopName(d.leg[1])} (3 frames)`,
+      `Detour keeps ${Math.round(ROCK_BUFFER_PX * pixelM)} m clear of its edge; adds ${Math.max(0, extraM)} m and ${addMin(live.newMin - live.oldMin)}`,
+      'Old route through the field shown in red',
+    ] : [...(d.why || [])];
     pushAlert({
       level: 'danger', kind: 'hazard', active: false, title: 'Rover camera: rock field ahead',
       text: `Confirmed in 3 frames, its edge about ${Math.round(Math.max(0, distPx(locate().p.px, d.hazard_px) - d.radius_px) * pixelM)} m ahead. Detour proposed.`,
@@ -751,10 +777,153 @@ export function initSim(ctx) {
       arrivedT: S.t, plannedArriveT: null, behindMin: Math.max(0, S.t - S.routeT),
       kind: 'hazard', label, option: { kind: 'hazard', stops: stopsAheadAt(a, S.routeT), minutes, path: route.path },
       minutes, savesMin: Math.min(0, restMin - minutes), why, path: route.path,
-      safety: safetyFor(minutes, reb), rejected: [], hazard: S.hazard.seen,
+      safety: safetyFor(minutes, reb), rejected: [], hazard: S.hazard.seen, abandoned,
     };
     const act = makeActive({
       id: `${a.id}>hazard`, kind: 'hazard', label, variantId: a.variantId, stops: stopsAheadAt(a, S.routeT),
+      path: reb.path, tMin: reb.tMin, homeMin: reb.homeMin, why,
+    });
+    setPending(p, act, 0);
+  }
+
+  // ------------------------------------------- known hazards: look ahead + live detours
+  function knownZones() {
+    const z = S.marks.map((m) => ({ id: m.id, px: m.px, radiusPx: MARK_AVOID_PX, kind: 'marked', mark: m }));
+    if (S.hazard.seen) z.push({ id: 'rock', px: S.hazard.seen.px, radiusPx: S.hazard.seen.radiusPx + ROCK_BUFFER_PX, kind: 'rock' });
+    return z;
+  }
+
+  /** First place within `maxPx` (along the route) where the active route ahead enters `zone`, or null. */
+  function aheadHit(zone, maxPx) {
+    const a = S.active;
+    const { p } = locate();
+    if (p.atEnd) return null;
+    let prev = p.px, along = 0;
+    for (let j = p.i + 1; j < a.path.length; j++) {
+      const q = a.path[j];
+      const sx = q[0] - prev[0], sy = q[1] - prev[1], L2 = sx * sx + sy * sy;
+      if (L2 > 0) {
+        const u = clamp(((zone.px[0] - prev[0]) * sx + (zone.px[1] - prev[1]) * sy) / L2, 0, 1);
+        const cx = prev[0] + u * sx, cy = prev[1] + u * sy;
+        if (Math.hypot(cx - zone.px[0], cy - zone.px[1]) <= zone.radiusPx) {
+          return { j, alongPx: along + Math.sqrt(L2) * u };
+        }
+        along += Math.sqrt(L2);
+        if (along > maxPx) return null;
+      }
+      prev = q;
+    }
+    return null;
+  }
+
+  /**
+   * Route around `zones` from the crew's position, rejoining the active route just past the hazard.
+   * Returns { route (re-based, t=0 now), abandoned (old path given up), oldMin, newMin, oldM, newM }
+   * or { blocked: reason } if the hazard sits on a stop or there is no safe way around.
+   */
+  function planAround(zones, hit) {
+    if (!hit || !ctx.walkGrid) return null;
+    const a = S.active;
+    const inZone = (px, pad = 0) => zones.some((z) => distPx(px, z.px) <= z.radiusPx + pad);
+    let k = hit.j;
+    while (k < a.path.length - 1 && inZone(a.path[k], 5)) k++;
+    // a little further on, so the detour joins the old line cleanly
+    let extra = 0;
+    while (k < a.path.length - 1 && extra < 15) { extra += distPx(a.path[k], a.path[k + 1]); k++; }
+    const stopBefore = a.stopMarks.slice(S.markIdx).find((m) => m.arriveMin <= a.tMin[k] + EPS);
+    if (stopBefore) {
+      if (inZone(stopPx(stopBefore.id) || a.path[stopBefore.pathIndex])) return { blocked: 'stop', stopId: stopBefore.id };
+      k = stopBefore.pathIndex;
+    }
+    const { p } = locate();
+    const det = findDetour(ctx.walkGrid, p.px, a.path[k], zones);
+    if (!det) return { blocked: 'nopath' };
+    const rest0 = sliceRouteFrom(a.path, a.tMin, a.homeMin, S.routeT);
+    const cut0 = a.tMin[k] - S.routeT;
+    const oldPath = rest0.path.filter((_, j) => rest0.tMin[j] <= cut0 + EPS);
+    // calibrate grid times to the planner's leg timing (uphill / downhill) using the piece being replaced
+    const oldWalk = cut0 - workMinutes(a.path, a.tMin, S.routeT, a.tMin[k]);
+    const gridOld = pathSeconds(ctx.walkGrid, oldPath) / 60;
+    const cal = gridOld > 0.5 && oldWalk > 0.5 ? clamp(oldWalk / gridOld, 0.5, 2) : 1;
+    const dRoute = {
+      path: det.path,
+      tMin: det.sec.map((x) => (x / 60) * cal),
+      homeMin: det.path.map((px) => ctx.timeHomeAt(px) ?? interpolateArray(a.tMin, a.homeMin, S.routeT)),
+    };
+    const rest = sliceRouteFrom(a.path, a.tMin, a.homeMin, a.tMin[k]);
+    const abandoned = oldPath;
+    const lenPx = (P) => P.reduce((acc, q, j) => (j ? acc + distPx(P[j - 1], q) : 0), 0);
+    return {
+      route: concatRoutes(dRoute, rest), abandoned,
+      oldMin: oldWalk, newMin: dRoute.tMin[dRoute.tMin.length - 1],
+      oldM: lenPx(abandoned) * pixelM, newM: lenPx(det.path) * pixelM,
+    };
+  }
+
+  function addMark(px) {
+    const id = `mk${S.marks.length + 1}`;
+    S.marks = [...S.marks, { id, px: [px[0], px[1]], t: S.t }];
+    S.zoneState[id] = { left: false, route: null };
+    pushAlert({ level: 'warn', kind: 'hazard', title: 'Hazard marked', text: `Pinned at T+${fmtMin(S.t)}. Routes will keep ${Math.round(MARK_AVOID_PX * pixelM)} m clear of it.` });
+  }
+
+  /** Each step: warn about, and route around, any known hazard on the route ahead. */
+  function checkZones(crewPx) {
+    if (S.pending || finished()) return;
+    const a = S.active;
+    for (const z of knownZones()) {
+      const zs = S.zoneState[z.id] || (S.zoneState[z.id] = { left: true, route: null });
+      if (!zs.left) {               // just marked where the crew stands: only counts once they walk clear
+        if (distPx(crewPx, z.px) > z.radiusPx + LEAVE_PX) zs.left = true;
+        else continue;
+      }
+      if (zs.route === a.id) continue;
+      const hit = aheadHit(z, LOOKAHEAD_PX);
+      if (!hit) continue;
+      zs.route = a.id;
+      proposeAround(z, hit);
+      if (S.pending) return;
+    }
+  }
+
+  function proposeAround(z, hit) {
+    const a = S.active;
+    const what = z.kind === 'rock' ? 'the rock field' : `the hazard you marked at T+${fmtMin(z.mark.t)}`;
+    const aheadM = Math.max(0, Math.round(hit.alongPx * pixelM / 10) * 10);
+    const plan = planAround(knownZones(), hit);
+    if (!plan || plan.blocked) {
+      pushAlert({
+        level: 'danger', kind: 'marked', active: false, title: `Marked hazard ${aheadM} m ahead`,
+        text: plan?.blocked === 'stop'
+          ? `It is at ${stopName(plan.stopId)}: approach slowly and keep clear of the marked spot.`
+          : 'No safe way around on this terrain: slow down and step around it carefully.',
+      });
+      return;
+    }
+    pushAlert({
+      level: 'warn', kind: 'marked', active: false, title: `Approaching ${z.kind === 'rock' ? 'the rock field' : 'a marked hazard'}: ${aheadM} m ahead`,
+      text: `Your route crosses ${what}. A detour around it is proposed.`,
+    });
+    const reb = rebase(plan.route);
+    const minutes = plan.route.tMin[plan.route.tMin.length - 1] ?? 0;
+    const restMin = (a.tMin[a.tMin.length - 1] ?? 0) - S.routeT;
+    const stops = stopsAheadAt(a, S.routeT);
+    const label = `Detour around ${z.kind === 'rock' ? 'the rock field' : 'your marked hazard'}`;
+    const why = [
+      `Your route ${isReturnKind(a.kind) || alreadyHeadingHome() ? 'home ' : ''}crosses ${what}, ${aheadM} m ahead`,
+      `Detour keeps ${Math.round((z.kind === 'rock' ? ROCK_BUFFER_PX : MARK_AVOID_PX) * pixelM)} m clear; adds ${Math.max(0, Math.round(plan.newM - plan.oldM))} m and ${addMin(plan.newMin - plan.oldMin)}`,
+      'Old route through the hazard shown in red',
+    ];
+    const p = {
+      id: `marked:${z.id}@${S.t.toFixed(1)}`, trigger: 'marked', atStopId: null, atStopName: 'mid-leg',
+      arrivedT: S.t, plannedArriveT: null, behindMin: Math.max(0, S.t - S.routeT),
+      kind: 'hazard', label, option: { kind: 'hazard', stops, minutes, path: plan.route.path },
+      minutes, savesMin: Math.min(0, restMin - minutes), why, path: plan.route.path,
+      safety: safetyFor(minutes, reb), rejected: [], hazard: { px: z.px, radiusPx: z.radiusPx, marked: z.kind === 'marked' },
+      abandoned: plan.abandoned,
+    };
+    const act = makeActive({
+      id: `${a.id}>${z.id}`, kind: isReturnKind(a.kind) ? a.kind : 'hazard', label, variantId: a.variantId, stops,
       path: reb.path, tMin: reb.tMin, homeMin: reb.homeMin, why,
     });
     setPending(p, act, 0);
@@ -901,6 +1070,7 @@ export function initSim(ctx) {
     const keep = new Set(next.stops);
     const newlyDropped = oldRemaining.filter((s) => s !== H_ID && !keep.has(s) && !S.visited.includes(s) && !S.dropped.includes(s));
     if (newlyDropped.length) S.dropped = [...S.dropped, ...newlyDropped];
+    if (p.abandoned?.length > 1) S.abandoned = [...S.abandoned, { path: p.abandoned, t: S.t, trigger: p.trigger }];
     S.active = next;
     S.markIdx = S.pendingMarkIdx;
     S.pending = null;
@@ -1013,6 +1183,7 @@ export function initSim(ctx) {
       const { p } = locate();
       pushTrail(p.px);
       checkAir(p.px);
+      if (S.status === 'walking' || S.status === 'returning') checkZones(p.px);
     }
     return dt - rem;
   }
@@ -1172,6 +1343,8 @@ export function initSim(ctx) {
       alerts: S.alerts,
       hazard: S.hazard.seen ? { ...S.hazard.seen } : null,
       hazardArmed: !!(S.hazard.armed && !S.hazard.done && S.hazard.at != null),
+      marks: S.marks.map((m) => ({ ...m, radiusPx: MARK_AVOID_PX })),
+      abandoned: S.abandoned,
       checkpoints: S.cpQueue.map((q) => ({ at: q.at, px: q.cp.px })),
     };
   }
@@ -1217,6 +1390,8 @@ export function initSim(ctx) {
     const goal = clamp(Number(target) || 0, 0, bud().budgetMin * 2);
     timeline = timeline.filter((e) => e.t <= goal + EPS);
     const events = timeline.filter((e) => e.type === 'inputs');
+    const markEvs = timeline.filter((e) => e.type === 'mark');
+    let mk = 0;
     const confirms = timeline.filter((e) => e.type === 'confirm').map((e) => ({ ...e, used: false }));
     replay = { ...(baseInputs || stateInputs()) };
     reset();
@@ -1229,6 +1404,7 @@ export function initSim(ctx) {
         k++; changed = true;
       }
       if (changed) syncFaults();
+      while (mk < markEvs.length && markEvs[mk].t <= t + EPS) addMark(markEvs[mk++].px);
     };
     const autoConfirm = () => {
       const p = S.pending;
@@ -1244,7 +1420,7 @@ export function initSim(ctx) {
       applyInputsUpTo(S.t);
       if (S.pending) { if (autoConfirm()) continue; break; }
       if (finished() || S.t >= goal - EPS) break;
-      const nextEv = k < events.length ? events[k].t : Infinity;
+      const nextEv = Math.min(k < events.length ? events[k].t : Infinity, mk < markEvs.length ? markEvs[mk].t : Infinity);
       const used = step(Math.max(EPS * 10, Math.min(0.25, goal - S.t, nextEv - S.t)));
       if (used <= EPS && !S.pending && !finished()) break; // blocked (e.g. storm hold)
     }
@@ -1330,6 +1506,13 @@ export function initSim(ctx) {
   ctx.on('sim:reset', () => { hardReset(); publish(); });
   ctx.on('sim:seek', (e) => seek(e?.t ?? 0));
   ctx.on('replan:confirm', (e) => confirm(e?.id));
+  ctx.on('hazard:mark', () => {
+    if (!S || finished()) return;
+    const px = locate().p.px;
+    timeline = [...timeline, { t: S.t, type: 'mark', px: [px[0], px[1]] }];
+    addMark(px);
+    publish();
+  });
 
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(frame);
 
