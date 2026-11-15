@@ -1,4 +1,4 @@
-# Marswalk Planner: System Architecture
+# Redline: System Architecture
 
 Nov 14, 2026 · @Reuhen
 

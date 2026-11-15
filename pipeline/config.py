@@ -1,4 +1,4 @@
-"""Central config for the Marswalk data pipeline.
+"""Central config for the Redline data pipeline.
 
 Every source URL, path and grid constant lives here so the stage scripts never
 hard-code them. Site-dependent values (box center, local CRS) are written by

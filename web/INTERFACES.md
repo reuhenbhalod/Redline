@@ -1,4 +1,4 @@
-# Marswalk web app: module interfaces
+# Redline web app: module interfaces
 
 This is the contract between `app.js` (scaffold) and the four feature modules. Each module is written
 by a different agent. Do not edit files you do not own, and do not change this contract on your own.
