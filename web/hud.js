@@ -350,7 +350,7 @@ export function initHud(ctx) {
   function pickBanner(sim, st) {
     if (sim.pendingReplan) {
       const p = sim.pendingReplan;
-      const trig = p.trigger === 'storm' ? 'danger' : p.trigger === 'air' ? 'danger' : 'warn';
+      const trig = p.trigger === 'storm' || p.trigger === 'air' || p.trigger === 'hazard' ? 'danger' : 'warn';
       return { level: trig, title: /^(storm|turn|abort|return)/i.test(p.label || '') ? p.label : `REROUTE: ${p.label}`, text: `Confirm on the card below${p.behindMin > 0.5 ? ` · ${Math.round(p.behindMin)} min behind` : ''}`, kind: 'replan' };
     }
     const alerts = sim.alerts || [];
@@ -606,7 +606,7 @@ export function initHud(ctx) {
       card.hidden = !p;
       if (p) {
         card.dataset.trigger = p.trigger || 'schedule';
-        cHead.textContent = p.trigger === 'storm' ? 'STORM · RETURN HOME' : p.trigger === 'air' ? 'TURN AROUND · AIR' : `REROUTE PROPOSED${p.atStopName ? ` AT ${p.atStopName.toUpperCase()}` : ''}`;
+        cHead.textContent = p.trigger === 'storm' ? 'STORM · RETURN HOME' : p.trigger === 'air' ? 'TURN AROUND · AIR' : p.trigger === 'hazard' ? 'ROVER CAMERA · ROCK FIELD AHEAD' : `REROUTE PROPOSED${p.atStopName ? ` AT ${p.atStopName.toUpperCase()}` : ''}`;
         cLabel.textContent = p.label || p.kind;
         const bits = [];
         if (p.behindMin > 0.5) bits.push(`${Math.round(p.behindMin)} min behind schedule`);

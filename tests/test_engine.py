@@ -210,6 +210,10 @@ def test_checkpoints_mid_leg():
         j = c["path_index"]
         assert full["path"][j] != full["path"][j + 1]  # never inside a work dwell
         assert full["t_min"][j] <= c["t_min"] <= full["t_min"][j + 1]
+        # px is the interpolated position on that segment, not a vertex
+        (x0, y0), (x1, y1) = full["path"][j], full["path"][j + 1]
+        f = (c["t_min"] - full["t_min"][j]) / (full["t_min"][j + 1] - full["t_min"][j])
+        assert abs(c["px"][0] - (x0 + f * (x1 - x0))) <= 1 and abs(c["px"][1] - (y0 + f * (y1 - y0))) <= 1
         kinds = [o["kind"] for o in c["options"]]
         assert kinds[0] == "planned"
         planned_min = c["options"][0]["minutes"]
@@ -219,8 +223,11 @@ def test_checkpoints_mid_leg():
     # on the way to A (science) you can drop A; on the way home there is nothing to drop
     first = cps[0]
     assert first["next_stop"] == "A"
-    assert [o["kind"] for o in first["options"]] == ["planned", "drop", "abort"]
-    drop = first["options"][1]
+    assert [o["kind"] for o in first["options"]] == ["planned", "skip_work", "drop", "abort"]
+    skip = first["options"][1]
+    assert skip["skip_at"] == "A" and skip["stops"] == ["@", "A", "B", "H"]
+    assert skip["saves_min"] == pytest.approx(cfg.DEFAULT_WORK_MIN["science"], abs=0.2)
+    drop = first["options"][2]
     assert drop["stops"] == ["@", "B", "H"] and drop["minutes"] < first["options"][0]["minutes"]
 
 

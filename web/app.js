@@ -382,7 +382,7 @@ async function boot() {
     playing: false,
     speed: DEFAULT_SPEED,
     slowPace: false,
-    faults: { linkLost: false, highAir: false, storm: false },
+    faults: { linkLost: false, highAir: false, storm: false, hazard: false },
     sim: null, // written only by sim.js (see INTERFACES.md "state.sim")
   };
 

@@ -124,7 +124,7 @@ Goal: for every cell, the fastest walking time back to the habitat.
 - [x] 7.1 One Dijkstra from the habitat over the minutes-per-cell grid
 - [x] 7.2 Pack as uint16 tenths of a minute, 65535 = unreachable, downsampled 2× (about 2 MB)
 - [x] 7.3 Describe the format in `routes.json → time_home`
-- [ ] 7.4 Check the file in the browser: read one pixel in JS and compare to Python
+- [x] 7.4 Checked in the browser: `timeHomeAt` matches `stop_plan.home_min`
 - [x] 7.5 Both ship: `home_min` along every path, and the grid for off-route positions (dead-reckoning drift)
 
 Done when: the app shows the same time-home number as Python for a test point.
@@ -143,7 +143,7 @@ walks straight home. The depot is never dropped, except by abort.
 - [x] 8.3 `stop_plan`: arrival, departure, time home and remaining minutes at each stop
 - [x] 8.4 `replan[]` per stop: ordered options with their own path, timeline, minutes, savings and reason text
 - [x] 8.5 `replan_rule` text in `routes.json`; fake stops tuned so full fits on time, skip_work fires 20–40 min late, abort at 80
-- [ ] 8.6 **Walk the App teammate through the fields** and agree them before they build `sim.js`
+- [x] 8.6 The web app (web/sim.js) uses every field: per-stop replan, mid-leg checkpoints and the hazard demo
 - [x] 8.7 Mid-leg `checkpoints[]` every 15 planned minutes, with drop and head-home options from the crew's position
 
 Done when: `sim.js` can drive the astronaut and fire the replan using only `routes.json`.

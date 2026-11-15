@@ -529,7 +529,7 @@ def _home_at(th: np.ndarray, x: int, y: int):
 
 
 def assemble(seq: list[str], legs, terrain: Terrain, stops: dict, th: np.ndarray,
-             work_first: float = 0.0) -> dict:
+             work_first: float = 0.0, no_work: frozenset = frozenset()) -> dict:
     """Join legs into one timed route starting at clock 0 at seq[0].
 
     The crew dwells `work_first` minutes at seq[0], then the stop's work time at each
@@ -564,7 +564,7 @@ def assemble(seq: list[str], legs, terrain: Terrain, stops: dict, th: np.ndarray
             add(c, r, clock + cum[i])
         clock += float(cum[-1])
         sp = {"id": b, "path_index": len(path) - 1, "arrive_min": round(clock, 2)}
-        dwell = 0.0 if k == len(seq) - 2 else work_min(stops[b], cfg)
+        dwell = 0.0 if k == len(seq) - 2 or b in no_work else work_min(stops[b], cfg)
         if dwell:
             clock += dwell
             x, y = stops[b]["px"]
@@ -627,7 +627,8 @@ def _option_head(spec, here, saves, stops, cfg):
     if kind == "planned":
         return "Continue as planned"
     if kind == "skip_work":
-        return f"Cut the {work_min(stops[here], cfg):.0f}-min work at {name(here)}, saves {saves:.0f} min"
+        at = spec.get("skip_at", here)
+        return f"Cut the {work_min(stops[at], cfg):.0f}-min work at {name(at)}, saves {saves:.0f} min"
     if kind == "drop":
         return f"Drop {', '.join(name(s) for s in spec['dropped'])}, saves {saves:.0f} min"
     dropped = ", ".join(name(s) for s in spec["dropped"])
@@ -636,7 +637,8 @@ def _option_head(spec, here, saves, stops, cfg):
 
 def build_option(spec: dict, here: str, planned_min: float, legs, terrain, stops, th) -> dict:
     cfg = terrain.cfg
-    r = assemble(spec["seq"], legs, terrain, stops, th, work_first=spec["work_here"])
+    skip = frozenset([spec["skip_at"]]) if spec.get("skip_at") else frozenset()
+    r = assemble(spec["seq"], legs, terrain, stops, th, work_first=spec["work_here"], no_work=skip)
     saves = 0.0 if spec["kind"] == "planned" else round(planned_min - r["total_min"], 1)
     head = _option_head(spec, here, saves, stops, cfg)
     why = [head]
@@ -653,6 +655,7 @@ def build_option(spec: dict, here: str, planned_min: float, legs, terrain, stops
         "t_min": r["t_min"],
         "home_min": r["home_min"],
         "abort": spec["kind"] == "abort",
+        **({"skip_at": spec["skip_at"]} if spec.get("skip_at") else {}),
         "why": why,
     }
 
@@ -667,8 +670,9 @@ def checkpoints(r: dict, seq: list[str], solver: LegSolver, terrain: Terrain, st
     """Mid-leg decision points every CHECKPOINT_MIN planned minutes while walking.
 
     Options mirror the stop-level ones, starting from the crew's position:
-    planned (no path; it is the rest of the main path), drop (skip upcoming
-    science stops), abort (head home now).
+    planned (no path; it is the rest of the main path), skip_work (go on, but cut
+    the work at the next science stop), drop (skip upcoming science stops),
+    abort (head home now).
     """
     cfg = terrain.cfg
     if not cfg.CHECKPOINT_MIN:
@@ -690,10 +694,12 @@ def checkpoints(r: dict, seq: list[str], solver: LegSolver, terrain: Terrain, st
             xy = path[j]
         i = j
         ahead = [sp["id"] for sp in r["stop_plan"] if sp["path_index"] > i]
-        xy = path[i]
         here_stops = {**stops, HERE: {"id": HERE, "name": "your position", "px": xy, "kind": "point"}}
         planned_min = round(total - target, 1)
         specs = []
+        nxt = ahead[0]
+        if stops[nxt].get("kind") == "science" and work_min(stops[nxt], cfg) > 0:
+            specs.append({"kind": "skip_work", "seq": [HERE] + ahead, "work_here": 0.0, "skip_at": nxt})
         kept = [s for s in ahead if stops[s].get("kind") != "science"]
         if kept != ahead:
             specs.append({"kind": "drop", "seq": [HERE] + kept, "work_here": 0.0,

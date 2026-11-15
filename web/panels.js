@@ -15,7 +15,7 @@ import { pacedDuration } from './sim.js';
 const KIND_LABEL = { base: 'Base', science: 'Science stop', depot: 'Sample depot' };
 const OPTION_LABEL = {
   planned: 'Continue as planned', skip_work: 'Skip the work here', drop: 'Drop the next stop',
-  abort: 'Abort: walk home', return: 'Return home',
+  abort: 'Abort: walk home', return: 'Return home', hazard: 'Detour',
 };
 const LEVEL_WORD = { ok: 'OK', warn: 'CAUTION', danger: 'DANGER', info: 'INFO' };
 
@@ -113,7 +113,7 @@ export function initPanels(ctx) {
         const rejected = (p.rejected || []).map((r) => `
           <li><span class="pn-tag">${esc(OPTION_LABEL[r.kind] || r.kind)}</span> ${esc(r.label || '')}
           ${Number.isFinite(r.overByMin) ? `<span class="pn-dim">— over budget by ${esc(fmtMinLong(r.overByMin))}</span>` : ''}</li>`).join('');
-        const trig = { schedule: 'Behind schedule', air: 'Air running short', storm: 'Storm' }[p.trigger] || 'Replan';
+        const trig = { schedule: 'Behind schedule', air: 'Air running short', storm: 'Storm', hazard: 'Rover: rock field' }[p.trigger] || 'Replan';
         html += `
         <section class="pn-card pn-replan" data-kind="${esc(p.kind)}" aria-label="Replan proposal">
           <div class="pn-replan-head">
@@ -122,9 +122,11 @@ export function initPanels(ctx) {
           </div>
           <div class="pn-kv">
             <div><span>At</span><b>${esc(p.atStopName || stopName(p.atStopId) || 'mid-leg')}</b></div>
-            <div><span>Arrived</span><b>${esc(tPlus(p.arrivedT))}${Number.isFinite(p.plannedArriveT) ? ` <small class="pn-dim">(plan ${esc(tPlus(p.plannedArriveT))})</small>` : ''}</b></div>
+            <div><span>${p.checkpoint || p.trigger === 'hazard' ? 'At' : 'Arrived'}</span><b>${esc(tPlus(p.arrivedT))}${Number.isFinite(p.plannedArriveT) ? ` <small class="pn-dim">(plan ${esc(tPlus(p.plannedArriveT))})</small>` : ''}</b></div>
             <div><span>Behind schedule</span><b class="pn-warn">${esc(fmtMinLong(p.behindMin))}</b></div>
-            <div><span>Saves</span><b class="pn-ok">${esc(fmtMinLong(p.savesMin))}</b></div>
+            ${p.trigger === 'hazard'
+              ? `<div><span>Adds</span><b class="pn-warn">${esc(fmtMinLong(Math.abs(p.savesMin)))}</b></div>`
+              : `<div><span>Saves</span><b class="pn-ok">${esc(fmtMinLong(p.savesMin))}</b></div>`}
           </div>
           <div class="pn-choice"><span class="pn-tag">${esc(OPTION_LABEL[p.kind] || p.kind)}</span> ${esc(p.label || '')}</div>
           ${why ? `<ul class="pn-why">${why}</ul>` : ''}

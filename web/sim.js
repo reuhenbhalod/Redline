@@ -13,6 +13,8 @@ import {
 } from './util.js';
 
 const EPS = 1e-9;
+const FAULT_KEYS = ['linkLost', 'highAir', 'storm', 'hazard'];
+const HERE = '@'; // routes.json pseudo-stop: the crew's position at a checkpoint
 
 // ===========================================================================
 // 1. Pure core
@@ -277,7 +279,7 @@ export function initSim(ctx) {
   const stateInputs = () => ({ faults: { ...(st().faults || {}) }, slowPace: !!st().slowPace });
   const inputs = () => replay || stateInputs();
   const sameInputs = (a, b) => !!a && !!b && a.slowPace === b.slowPace
-    && ['linkLost', 'highAir', 'storm'].every((k) => !!a.faults?.[k] === !!b.faults?.[k]);
+    && FAULT_KEYS.every((k) => !!a.faults?.[k] === !!b.faults?.[k]);
   const paceFactor = () => (inputs().slowPace ? config.slowPaceFactor : 1);
   const burnFactor = () => (inputs().faults?.highAir ? config.highAirBurnFactor : 1);
   const finished = () => S.status === 'done' || S.status === 'aborted';
@@ -318,7 +320,7 @@ export function initSim(ctx) {
   function freshState(variantId) {
     const v = data.variantsById[variantId] || variants[0];
     const active = activeFromVariant(v);
-    return {
+    return withQueues({
       plannedVariantId: v.id,
       t: 0, routeT: 0, status: 'idle', headingDeg: 0,
       active, markIdx: active.stopMarks.length > 1 ? 1 : 0,
@@ -328,8 +330,78 @@ export function initSim(ctx) {
       usedMin: 0, turnaround: false, airOutAlerted: false,
       link: { ok: true, lostSinceT: null, linkAlertId: null },
       storm: { on: false, alertId: null, handled: false, holdAlerted: false },
+      cpQueue: [],                       // upcoming mid-leg checkpoints on the active route
+      hazard: { armed: false, at: null, demo: null, variantId: null, seen: null, done: false },
       seeking: false,
-    };
+    });
+  }
+
+  // ------------------------------------------------- checkpoints / hazard
+  const sameIds = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]);
+
+  /** Stops still ahead on route `a` after route time t (by arrival). */
+  function stopsAheadAt(a, t) {
+    return a.stopMarks.filter((m) => m.arriveMin > t + EPS).map((m) => m.id);
+  }
+
+  /**
+   * Map routes.json checkpoints onto the active route. A checkpoint applies where its segment
+   * (variant path[i] -> path[i+1]) appears on the active route and the stops it plans for are the
+   * stops still ahead there. Option routes reuse the same leg vertices, so this keeps working
+   * after a reroute (e.g. skip the work at A). One checkpoint per CHECKPOINT window.
+   */
+  function checkpointQueue(st0) {
+    const a = st0.active;
+    if (isReturnKind(a.kind)) return [];
+    const found = [];
+    const order = [a.variantId, ...variants.map((v) => v.id).filter((id) => id !== a.variantId)];
+    for (const vid of order) {
+      const v = data.variantsById[vid];
+      for (const c of v?.checkpoints || []) {
+        const i = c.path_index, P = v.path, T = v.t_min;
+        if (!P[i + 1] || !(T[i + 1] > T[i])) continue;
+        for (let j = 0; j < a.path.length - 1; j++) {
+          if (!samePx(a.path[j], P[i]) || !samePx(a.path[j + 1], P[i + 1])) continue;
+          const f = (c.t_min - T[i]) / (T[i + 1] - T[i]);
+          const at = a.tMin[j] + f * (a.tMin[j + 1] - a.tMin[j]);
+          if (at <= st0.routeT + EPS) break;
+          const want = (c.options?.[0]?.stops || []).filter((x) => x !== HERE);
+          if (!sameIds(want, stopsAheadAt(a, at))) break;
+          if (found.some((q) => Math.abs(q.at - at) < 5)) break;
+          found.push({ at, cp: c, variantId: vid });
+          break;
+        }
+      }
+    }
+    return found.sort((x, y) => x.at - y.at);
+  }
+
+  /** Where the scripted rover-camera hazard triggers on the active route, or null. */
+  function hazardOnRoute(st0) {
+    const a = st0.active;
+    if (isReturnKind(a.kind)) return null;
+    for (const v of variants) {
+      const d = v.hazard_demo;
+      if (!d) continue;
+      const ahead = stopsAheadAt(a, st0.routeT);
+      if (!ahead.includes(d.leg[1])) continue;
+      for (let j = 0; j < a.path.length; j++) {
+        if (samePx(a.path[j], d.trigger_px) && a.tMin[j] > st0.routeT + EPS) {
+          return { at: a.tMin[j], demo: d, variantId: v.id };
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Recompute the checkpoint queue and the hazard trigger for the current active route. */
+  function withQueues(st0) {
+    st0.cpQueue = checkpointQueue(st0);
+    if (st0.hazard.armed && !st0.hazard.done) {
+      const h = hazardOnRoute(st0);
+      st0.hazard = { ...st0.hazard, at: h?.at ?? null, demo: h?.demo ?? null, variantId: h?.variantId ?? null };
+    }
+    return st0;
   }
 
   function pushAlert(a) {
@@ -572,6 +644,113 @@ export function initSim(ctx) {
     if (st().playing) ctx.setState({ playing: false });
   }
 
+  /**
+   * Replan options measured against the ACTIVE route: "planned" becomes the rest of the active
+   * route (which may already skip some work), and options that would not save at least half a
+   * minute over it are dropped, so the same reroute is never proposed twice.
+   */
+  function optionsVsActive(options) {
+    const a = S.active;
+    const rest = sliceRouteFrom(a.path, a.tMin, a.homeMin, S.routeT);
+    const restMin = (a.tMin[a.tMin.length - 1] ?? 0) - S.routeT;
+    const planned = {
+      ...options[0], minutes: restMin, path: rest.path, t_min: rest.tMin, home_min: rest.homeMin, activeRest: true,
+    };
+    return [planned, ...options.slice(1).filter((o) => o.abort || o.minutes < restMin - 0.5)];
+  }
+
+  function chooseNow(options) {
+    const pace = paceFactor();
+    const durationOf = pace === 1 ? null
+      : (o) => pacedDuration(o.path, o.t_min, o.t_min[0], o.t_min[o.t_min.length - 1], pace);
+    return chooseReplanOption(options, S.t, config.budgetMin, config.reserveMin, {
+      burnFactor: burnFactor(), airLeftMin: config.budgetMin - S.usedMin, durationOf,
+    });
+  }
+
+  function checkpointLabel(o, options) {
+    switch (o.kind) {
+      case 'skip_work': {
+        const w = data.stopsById[o.skip_at]?.work_min || 0;
+        return `Skip the ${Math.round(w)}-min work at ${stopName(o.skip_at)}`;
+      }
+      case 'drop': {
+        const gone = (options[0]?.stops || []).filter((x) => x !== HERE && !o.stops.includes(x));
+        return `Drop ${gone.map(stopName).join(', ') || 'a stop'}`;
+      }
+      case 'abort': return 'Abort: head home from here';
+      default: return o.kind;
+    }
+  }
+
+  /** Mid-leg checkpoint: apply the replan rule from the crew's position. */
+  function checkpointReached(q) {
+    if (isReturnKind(S.active.kind) || S.storm.on || S.pending) return;
+    const options = optionsVsActive(q.cp.options);
+    const choice = chooseNow(options);
+    if (!choice.option || choice.option.activeRest) return;
+    const o = choice.option;
+    const pace = paceFactor();
+    const label = checkpointLabel(o, options);
+    const why = [...(o.why || [])];
+    if (!choice.fits) why.unshift('No option fits the budget with the reserve kept, so the rule falls back to abort');
+    else if (choice.trigger === 'air') why.unshift('Air use is higher than planned: the longer options would eat into the reserve');
+    else why.unshift('Behind schedule mid-leg: the rest of the plan no longer fits with the reserve kept');
+    if (pace !== 1) why.push(`Option times stretched to the current pace (${pace}x walking speed)`);
+    const route = { path: o.path, tMin: o.t_min, homeMin: o.home_min };
+    const reb = rebase(route);
+    const stops = o.stops.filter((x) => x !== HERE);
+    const p = {
+      id: `cp@${S.t.toFixed(1)}`, trigger: choice.trigger, atStopId: null, atStopName: 'mid-leg', checkpoint: true,
+      arrivedT: S.t, plannedArriveT: null, behindMin: Math.max(0, S.t - S.routeT),
+      kind: o.kind, label, option: o, minutes: o.minutes, savesMin: Math.max(0, options[0].minutes - o.minutes),
+      why, path: o.path, safety: safetyFor(o.minutes, reb),
+      rejected: choice.rejected.map((r) => ({
+        kind: r.option.kind, label: r.option.activeRest ? 'Continue as planned' : checkpointLabel(r.option, options),
+        projectedReturnT: r.projectedReturnT, overByMin: r.overByMin, failed: r.failed,
+      })),
+    };
+    const act = makeActive({
+      id: `${q.variantId}@cp${Math.round(q.cp.t_min)}:${o.kind}`, kind: o.kind, label, variantId: q.variantId, stops,
+      path: reb.path, tMin: reb.tMin, homeMin: reb.homeMin, why, distanceM: o.distance_m,
+    });
+    setPending(p, act, 0);
+  }
+
+  /** The rover camera confirms the scripted rock field: propose the precomputed detour. */
+  function hazardReached() {
+    const hz = S.hazard;
+    const d = hz.demo;
+    S.hazard = { ...hz, done: true, at: null, seen: { px: d.hazard_px, radiusPx: d.radius_px, t: S.t, leg: d.leg } };
+    const a = S.active;
+    const mark = a.stopMarks.slice(S.markIdx).find((m) => m.id === d.leg[1]);
+    if (!mark) return;
+    const detour = { path: d.path, tMin: d.t_min, homeMin: d.home_min };
+    const rest = sliceRouteFrom(a.path, a.tMin, a.homeMin, mark.arriveMin);
+    const route = concatRoutes(detour, rest);
+    const reb = rebase(route);
+    const minutes = route.tMin[route.tMin.length - 1] ?? 0;
+    const restMin = (a.tMin[a.tMin.length - 1] ?? 0) - S.routeT;
+    const label = `Rock field ahead: detour to ${stopName(d.leg[1])}`;
+    const why = [...(d.why || [])];
+    pushAlert({
+      level: 'danger', kind: 'hazard', active: false, title: 'Rover camera: rock field ahead',
+      text: `Confirmed in 3 frames, its edge about ${Math.round(Math.max(0, distPx(locate().p.px, d.hazard_px) - d.radius_px) * pixelM)} m ahead. Detour proposed.`,
+    });
+    const p = {
+      id: `hazard@${S.t.toFixed(1)}`, trigger: 'hazard', atStopId: null, atStopName: 'mid-leg',
+      arrivedT: S.t, plannedArriveT: null, behindMin: Math.max(0, S.t - S.routeT),
+      kind: 'hazard', label, option: { kind: 'hazard', stops: stopsAheadAt(a, S.routeT), minutes, path: route.path },
+      minutes, savesMin: Math.min(0, restMin - minutes), why, path: route.path,
+      safety: safetyFor(minutes, reb), rejected: [], hazard: S.hazard.seen,
+    };
+    const act = makeActive({
+      id: `${a.id}>hazard`, kind: 'hazard', label, variantId: a.variantId, stops: stopsAheadAt(a, S.routeT),
+      path: reb.path, tMin: reb.tMin, homeMin: reb.homeMin, why,
+    });
+    setPending(p, act, 0);
+  }
+
   // ------------------------------------------------------- arrival / replan
   function arrive(mark) {
     S.routeT = mark.arriveMin;
@@ -607,20 +786,16 @@ export function initSim(ctx) {
     const remaining = [mark.id, ...remainingStopIds()];
     const hit = findReplanEntry(variants, mark.id, remaining, S.active.variantId);
     if (!hit) return;
-    const leftMin = config.budgetMin - S.usedMin;
     const pace = paceFactor();
-    // the rule is applied to the time each option really takes at the crew's current pace
-    const durationOf = pace === 1 ? null
-      : (o) => pacedDuration(o.path, o.t_min, o.t_min[0], o.t_min[o.t_min.length - 1], pace);
-    const choice = chooseReplanOption(hit.entry.options, S.t, config.budgetMin, config.reserveMin, {
-      burnFactor: burnFactor(), airLeftMin: leftMin, durationOf,
-    });
+    // the rule is applied to the time each option really takes at the crew's current pace, and
+    // measured against the route the crew is actually on (it may already skip this stop's work)
+    const choice = chooseNow(optionsVsActive(hit.entry.options));
     const rejected = choice.rejected.map((r) => ({
       kind: r.option.kind, label: optionLabel(r.option, mark.id, hit.entry),
       projectedReturnT: r.projectedReturnT, overByMin: r.overByMin, failed: r.failed,
     }));
     const pid = `${mark.id}@${S.t.toFixed(1)}`;
-    if (choice.option && choice.option.kind === 'planned') {
+    if (choice.option && (choice.option.kind === 'planned' || choice.option.activeRest)) {
       S.replans = [...S.replans, { id: pid, t: S.t, atStopId: mark.id, kind: 'planned', label: 'Continue as planned', confirmedT: S.t, trigger: 'schedule' }];
       return;
     }
@@ -725,6 +900,7 @@ export function initSim(ctx) {
     const rec = S.replans.find((r) => r.id === p.id);
     deactivateAlerts((a) => a.kind === 'replan');
     S.status = isReturnKind(next.kind) ? 'returning' : 'walking';
+    withQueues(S);
     pushAlert({ level: 'ok', kind: 'replan', title: 'Reroute confirmed', text: p.label });
     if (!S.seeking) ctx.emit('replan:applied', rec);
   }
@@ -744,6 +920,23 @@ export function initSim(ctx) {
       S.link = { ok: true, lostSinceT: null, linkAlertId: null };
       deactivateAlerts((a) => a.kind === 'link');
       pushAlert({ level: 'ok', kind: 'link', title: 'Rover link restored: position fixed', text: 'Dot snapped back to the rover fix.' });
+    }
+    // rover-camera hazard demo (scripted rock field)
+    if (f.hazard && !S.hazard.armed) {
+      S.hazard = { ...S.hazard, armed: true };
+      withQueues(S);
+      if (S.hazard.done) {
+        // already used once this walk
+      } else if (S.hazard.at != null) {
+        pushAlert({
+          level: 'info', kind: 'hazard', title: 'Rover scouting ahead',
+          text: `The rover camera will confirm a rock field on ${S.hazard.demo.leg.map(stopName).join(' → ')}; a detour will be proposed about ${Math.round(S.hazard.demo.radius_px * pixelM + 100)} m before it.`,
+        });
+      } else {
+        pushAlert({ level: 'info', kind: 'hazard', title: 'No rover hazard ahead', text: 'The scripted rock field is not on the rest of this route.' });
+      }
+    } else if (!f.hazard && S.hazard.armed && !S.hazard.done) {
+      S.hazard = { ...S.hazard, armed: false, at: null, demo: null };
     }
     // storm
     if (f.storm && !S.storm.on) {
@@ -782,6 +975,9 @@ export function initSim(ctx) {
       const n = a.path.length;
       const mark = a.stopMarks[S.markIdx];
       if (mark && S.routeT >= mark.arriveMin - EPS) { arrive(mark); continue; }
+      if (S.hazard.at != null && S.routeT >= S.hazard.at - EPS) { hazardReached(); continue; }
+      const cp = S.cpQueue[0];
+      if (cp && S.routeT >= cp.at - EPS) { S.cpQueue = S.cpQueue.slice(1); checkpointReached(cp); continue; }
       if (n < 2 || S.routeT >= a.tMin[n - 1] - EPS) {
         // end of route without a final mark: treat as home
         S.status = isReturnKind(a.kind) ? 'aborted' : 'done';
@@ -794,6 +990,8 @@ export function initSim(ctx) {
       const rate = stationary ? 1 : paceFactor();
       let target = a.tMin[i + 1];
       if (mark && mark.arriveMin < target) target = Math.max(S.routeT, mark.arriveMin);
+      if (cp && cp.at < target) target = Math.max(S.routeT, cp.at);
+      if (S.hazard.at != null && S.hazard.at < target) target = Math.max(S.routeT, S.hazard.at);
       const need = (target - S.routeT) / rate;
       const use = Math.min(need, rem);
       S.t += use;
@@ -960,6 +1158,9 @@ export function initSim(ctx) {
       replans: S.replans,
       pendingReplan: pending,
       alerts: S.alerts,
+      hazard: S.hazard.seen ? { ...S.hazard.seen } : null,
+      hazardArmed: !!(S.hazard.armed && !S.hazard.done && S.hazard.at != null),
+      checkpoints: S.cpQueue.map((q) => ({ at: q.at, px: q.cp.px })),
     };
   }
 
@@ -1047,7 +1248,7 @@ export function initSim(ctx) {
     // keep the UI toggles in step with what is in force at the target time
     const s0 = st();
     const patch = {};
-    if (['linkLost', 'highAir', 'storm'].some((f) => !!s0.faults?.[f] !== !!finalInputs.faults?.[f])) {
+    if (FAULT_KEYS.some((f) => !!s0.faults?.[f] !== !!finalInputs.faults?.[f])) {
       patch.faults = { ...(s0.faults || {}), ...finalInputs.faults };
     }
     if (!!s0.slowPace !== !!finalInputs.slowPace) patch.slowPace = finalInputs.slowPace;

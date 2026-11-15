@@ -119,7 +119,7 @@ Top-level keys are shallow-merged by `setState`.
 | `playing` | `boolean` | app.js (Play button, space key, Reset sets false). sim.js sets false on a pending replan, at done and at abort-done, and sets true after a confirm. | sim, top bar |
 | `speed` | `number`, x real time (60, 120, **300**, 600, 1200) | app.js | sim. Sim minutes per real second = `speed / 60`. |
 | `slowPace` | `boolean` | app.js | sim (and panels/hud for a "SLOW PACE" note) |
-| `faults` | `{ linkLost: boolean, highAir: boolean, storm: boolean }` | app.js | sim (it reacts), others display them |
+| `faults` | `{ linkLost: boolean, highAir: boolean, storm: boolean, hazard: boolean }` | app.js | sim (it reacts), others display them |
 | `sim` | `SimState \| null` | **sim.js only** | everyone |
 
 ### SimState (`state.sim`), written only by sim.js and always as a whole new object
@@ -200,6 +200,9 @@ Top-level keys are shallow-merged by `setState`.
   dropped: string[],         // stop ids dropped by a replan (map greys them out)
   replans: ReplanRecord[],   // one record per decision at a stop, including 'planned'
   pendingReplan: ReplanProposal | null,   // non-null means a reroute is waiting for the astronaut (sim is paused)
+  hazard: { px, radiusPx, t, leg } | null, // rock field confirmed by the rover camera (map draws it)
+  hazardArmed: boolean,                   // Rock field demo on and its trigger is still ahead
+  checkpoints: [{ at, px }],              // upcoming mid-leg checkpoints on the active route (route clock)
   alerts: Alert[],           // oldest first, at most about 30
 }
 ```
@@ -216,7 +219,7 @@ Alert = {
 
 ReplanProposal = {
   id: string,                      // unique, e.g. 'A@59.8'
-  trigger: 'schedule' | 'air' | 'storm',
+  trigger: 'schedule' | 'air' | 'storm' | 'hazard',   // checkpoint proposals also set checkpoint: true, atStopId: null
   atStopId: string | null,         // null when proposed mid-leg (air / storm)
   atStopName: string,
   arrivedT: number,                // actual T (sim clock) when the rule was applied

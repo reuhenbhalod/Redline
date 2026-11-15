@@ -246,6 +246,12 @@ export function initMap(ctx) {
   const homeLine = L.polyline([], { ...live, color: C.home, weight: 3, opacity: 0.85, dashArray: '2 7' });
   const trailLine = L.polyline([], { ...live, color: C.crew1, weight: 2, opacity: 0.75, dashArray: '1 5' });
   [homeLine, activeWalked, activeRemaining, trailLine, proposedLine].forEach((l) => l.addTo(map));
+  // Rover-camera hazard (rock field) once confirmed, and upcoming mid-leg checkpoints.
+  const hazardCircle = L.circle(pxToLatLng([0, 0]), {
+    radius: 1, color: '#e5484d', weight: 2, dashArray: '4 4', fillColor: '#e5484d', fillOpacity: 0.25, interactive: true,
+  }).bindTooltip('Rock field (rover camera)', { direction: 'top' });
+  const cpLayer = L.layerGroup().addTo(map);
+  let lastHazardKey = '', lastCpKey = '';
 
   const crewOpt = { renderer: crewRenderer, interactive: false };
   const crewColors = [C.crew1, C.crew2];
@@ -343,6 +349,27 @@ export function initMap(ctx) {
     } else {
       setVisible(proposedLine, false);
       lastProposalId = null;
+    }
+
+    // Rock field confirmed by the rover camera.
+    const hz = sim?.hazard;
+    const hzKey = hz ? `${hz.px}|${hz.radiusPx}` : '';
+    if (hzKey !== lastHazardKey) {
+      if (hz) { hazardCircle.setLatLng(pxToLatLng(hz.px)); hazardCircle.setRadius(hz.radiusPx); }
+      setVisible(hazardCircle, !!hz);
+      lastHazardKey = hzKey;
+    }
+
+    // Upcoming checkpoints on the active route (small ticks where the replan rule is re-checked).
+    const cps = sim && sim.status !== 'idle' ? (sim.checkpoints || []) : [];
+    const cpKey = cps.map((c) => c.px.join(',')).join(';');
+    if (cpKey !== lastCpKey) {
+      cpLayer.clearLayers();
+      for (const c of cps) {
+        L.circleMarker(pxToLatLng(c.px), { radius: 3, color: '#f5f1e8', weight: 1.5, fillColor: '#6cb4ee', fillOpacity: 1, interactive: false })
+          .addTo(cpLayer);
+      }
+      lastCpKey = cpKey;
     }
 
     // Way home: shown in suit-only mode or during a storm.

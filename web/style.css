@@ -148,16 +148,22 @@ select {
 body[data-mode="hud"] #planner { visibility: hidden; }
 
 /* Keep every top-bar control on screen on laptop widths (the bar still scrolls sideways below ~1000 px). */
-@media (max-width: 1380px) {
+@media (max-width: 1560px) {
   .brand-title { display: none; }
   #topbar { gap: 10px; }
 }
-@media (max-width: 1100px) {
+@media (max-width: 1280px) {
   :root { --panel-w: 320px; }
   #scrub { width: 80px; }
   #topbar { gap: 8px; padding: 0 10px; }
   .tb-group { gap: 5px; }
   .btn, .toggle, .seg-btn { padding: 5px 8px; }
+}
+@media (max-width: 1100px) {
+  #scrub { width: 56px; }
+  #topbar { gap: 6px; }
+  .btn, .toggle, .seg-btn { padding: 4px 6px; font-size: 12px; }
+  .clock { min-width: 52px; }
 }
 @media (max-width: 760px) {
   #planner { grid-template-columns: 1fr; grid-template-rows: 55% 45%; }

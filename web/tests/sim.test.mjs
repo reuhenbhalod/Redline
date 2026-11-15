@@ -189,11 +189,13 @@ test('engine: slow pace applies the rule at the real pace, waits, and confirm sp
   let s = run(h);
   assert.equal(s.status, 'awaiting_confirm');
   const kind = s.pendingReplan.kind;
-  assert.ok(['skip_work', 'abort'].includes(kind), `unexpected ${kind}`);
+  assert.ok(['skip_work', 'drop', 'abort'].includes(kind), `unexpected ${kind}`);
   assert.equal(s.pendingReplan.safety.withinBudget, true);
-  assert.equal(s.pendingReplan.atStopId, 'A');
-  near(s.t, full.stop_plan[1].arrive_min / 0.7, 0.05);
-  assert.ok(s.pendingReplan.behindMin > 15);
+  // fires at the first point where the plan stops fitting: a mid-leg checkpoint before A, or A itself
+  const atA = s.pendingReplan.atStopId === 'A';
+  assert.ok(atA || s.pendingReplan.checkpoint, 'expected a proposal at A or at a checkpoint');
+  assert.ok(s.t <= full.stop_plan[1].arrive_min / 0.7 + 0.05);
+  assert.ok(s.pendingReplan.behindMin > 0);
   h.api.step(5); // paused while awaiting confirm
   near(h.sim().t, s.t, 1e-9);
   h.ctx.emit('replan:confirm', { id: s.pendingReplan.id });
@@ -275,12 +277,16 @@ test('engine: high air toggled mid-leg after A fires the turn-around and turns b
   const h = makeCtx();
   while (h.sim().t < 50) h.api.step(0.25);
   h.ctx.setState({ faults: { linkLost: false, highAir: true, storm: false } });
-  const s = run(h);
-  assert.equal(s.air.turnaround, true);
+  let s = run(h);
+  // caught by a checkpoint's air check, or by the turn-around rule
   assert.equal(s.pendingReplan?.trigger, 'air');
-  assert.equal(s.pendingReplan.kind, 'return');
-  h.ctx.emit('replan:confirm', { id: s.pendingReplan.id });
-  assert.equal(run(h).status, 'aborted');
+  assert.ok(s.air.turnaround || s.pendingReplan.checkpoint);
+  for (let n = 0; n < 4 && s.pendingReplan; n++) {
+    h.ctx.emit('replan:confirm', { id: s.pendingReplan.id });
+    s = run(h);
+  }
+  assert.ok(['done', 'aborted'].includes(s.status));
+  assert.ok(s.air.leftMin >= s.air.reserveMin - 1, `air left at home ${s.air.leftMin}`);
 });
 
 test('engine: storm mid-leg proposes an abort home; link loss drifts and snaps back', () => {
@@ -315,4 +321,51 @@ test('engine: seek fast-forwards and stops at a pending replan; reset returns to
   assert.equal(h.sim().t, 0);
   h.ctx.setState({ plannedVariantId: 'skipA' });
   assert.equal(h.sim().active.id, 'skipA');
+});
+
+
+// ---------------------------------------------------------------- checkpoints and the hazard demo
+test('engine: checkpoints are queued on the active route and never re-propose the same reroute', () => {
+  const h = makeCtx({ slowPace: true });
+  let s = run(h);
+  assert.ok(s.checkpoints.length > 0 || s.pendingReplan, 'expected checkpoints on the route');
+  const first = s.pendingReplan;
+  h.ctx.emit('replan:confirm', { id: first.id });
+  s = run(h);
+  // after skipping the work, arriving at A must not propose skipping it again
+  const again = s.replans.filter((r) => r.kind === first.kind && r.confirmedT == null && r.id !== first.id);
+  assert.equal(again.length, 0);
+  while (s.pendingReplan) { h.ctx.emit('replan:confirm', { id: s.pendingReplan.id }); s = run(h); }
+  assert.ok(['done', 'aborted'].includes(s.status));
+});
+
+test('engine: rock field demo proposes the precomputed detour and rejoins the plan at B', () => {
+  const hz = full.hazard_demo;
+  assert.ok(hz, 'routes.json full variant has a hazard_demo');
+  const h = makeCtx({ faults: { hazard: true } });
+  let s = run(h);
+  assert.equal(s.pendingReplan?.trigger, 'hazard');
+  near(s.routeT, hz.trigger_t_min, 0.01);
+  assert.deepEqual(s.hazard.px, hz.hazard_px);
+  assert.ok(s.pendingReplan.minutes > 0);
+  h.ctx.emit('replan:confirm', { id: s.pendingReplan.id });
+  s = h.sim();
+  assert.equal(s.active.kind, 'hazard');
+  assert.deepEqual(s.active.stops, ['B', 'H']);
+  // the detour never enters the rock field
+  const [hx, hy] = hz.hazard_px;
+  for (const [x, y] of s.active.path.slice(0, hz.path.length)) assert.ok(Math.hypot(x - hx, y - hy) > hz.radius_px);
+  s = run(h);
+  while (s.pendingReplan) { h.ctx.emit('replan:confirm', { id: s.pendingReplan.id }); s = run(h); }
+  assert.equal(s.status, 'done');
+  assert.ok(s.visited.includes('B'));
+});
+
+test('engine: rock field toggled after the trigger point does nothing', () => {
+  const h = makeCtx();
+  while (h.sim().routeT < full.hazard_demo.trigger_t_min + 5) h.api.step(0.25);
+  h.ctx.setState({ faults: { linkLost: false, highAir: false, storm: false, hazard: true } });
+  const s = run(h);
+  assert.notEqual(s.pendingReplan?.trigger, 'hazard');
+  assert.ok(s.alerts.some((a) => a.title === 'No rover hazard ahead'));
 });

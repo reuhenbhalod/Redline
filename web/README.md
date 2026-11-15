@@ -45,10 +45,11 @@ run `pipeline/fake_export.py` (or the real pipeline) first.
 | Reset | `r` | Back to T+0:00 at the habitat. The toggles stay as they are. |
 | Scrubber | | Jump to a sim time. The sim replays from 0, re-applying each fault / pace toggle at the time it happened and re-confirming reroutes you already confirmed. It stops early at a reroute that was never confirmed. Scrubbing back drops anything recorded after the target and sets the toggles to what was in force then. |
 | Clock and status chip | | Sim time since leaving the habitat, and idle / walking / working / awaiting confirm / returning / done / aborted |
-| Slow pace | | The crew walks at 0.8× the planned speed, falls behind, and the replan rule fires at the next stop |
+| Slow pace | | The crew walks at 0.8× the planned speed and falls behind. The replan rule fires at the next mid-leg checkpoint or stop where the plan stops fitting |
 | Cut rover link | | Fallback demo: suit-only mode with dead reckoning and a growing uncertainty circle. Turn it off to snap the dot back to the true position. |
 | High air use | | Fallback demo: air burns at 1.6×. The turn-around alert fires when air left gets close to the air the walk home needs (walk home × 1.6) + reserve. |
 | Storm | | Fallback demo: dust or solar storm. The status turns red and the walk is aborted with the shortest safe route home. |
+| Rock field | | Demo: the rover camera confirms a rock field ahead on Delta outcrop → Three Forks. When the crew reaches the trigger point (about 100 m before it), the precomputed detour from `routes.json → hazard_demo` is proposed, the rock field is drawn on the map, and the route rejoins the plan at the depot. Turn it on before the crew passes the trigger. |
 
 ### Map (planner)
 
@@ -100,11 +101,12 @@ This is the walkthrough the integration test runs (`pw-int/walk.mjs`). It takes 
    the full plan (about 5.0 km, 4:00) inside the 5 h suit budget, with its why-lines (what hazards the route avoids).
 2. **Preview a stop.** Click **A** (Delta outcrop) to see its science goal, what to expect, minerals and the planned
    arrival at T+0:42.
-3. **Fall behind.** Turn on **Slow pace**, set the speed to 1200× and press **Play**. The crew reaches A at about T+0:48,
-   about 10 min late. The sim pauses and proposes **"Skip the 45-min work at Delta outcrop"**: at the crew's real 0.8×
-   pace the full plan would eat into the reserve. The card shows the option that did not fit and that the crew is
+3. **Fall behind.** Turn on **Slow pace**, set the speed to 1200× and press **Play**. At the first mid-leg checkpoint
+   (about T+0:19, 4 min behind) the sim pauses and proposes **"Skip the 45-min work at Delta outcrop"**: at the crew's
+   real 0.8× pace the full plan would eat into the reserve. Checkpoints (small blue dots on the route) re-check the rule
+   every 15 planned minutes, so the decision comes before the crew walks all the way to A. The card shows the option that did not fit and that the crew is
    still back with the reserve kept. The proposed path is dashed blue. Press **Confirm reroute**. The active route
-   becomes `full@A:skip_work`; the crew still retrieves the tubes at Three Forks and gets home with about 33 min of air
+   becomes `full@cp15:skip_work`; the crew still retrieves the tubes at Three Forks and gets home with about 33 min of air
    to spare. (Exact times follow `data/routes.json`; at harsher paces the rule can also cut the depot work or abort.)
 4. **Helmet view.** Press `h`. The HUD shows the arrow to B, the distance left, air left vs. time home, and the route strip.
 5. **Fallbacks.**
