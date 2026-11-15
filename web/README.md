@@ -1,8 +1,17 @@
 # Marswalk Planner: web app
 
-A static web app for planning and flying a two-person Mars EVA. It has a **Planner** mode (map, routes, stop previews,
-safety check) and a **Helmet HUD** mode (the view an astronaut would see). A built-in sim walks the crew along the
-route so the replan and fallback logic can be demonstrated.
+A static web app for planning and flying a two-person Mars EVA. Four views (top-bar tabs, keys 1–4):
+
+| View | What it is |
+| --- | --- |
+| **Planner** | Habitat planning: HiRISE map (rust-tinted, 100 m grid), layers, routes, stop previews, safety check |
+| **Astronaut tablet** | What the crew carries: next stop, air left, time home, live map, four glove-sized buttons; full-screen reroute card, link-lost and storm modes |
+| **Helmet HUD** | Eyes-up visor display |
+| **Rover** | The support rover's camera (a labeled demo frame), confirmed hazards, crew tracking, the reroute it proposed, event log |
+
+A built-in sim walks the crew along the route so the replan and fallback logic can be demonstrated. The presenter
+controls (Play, speed, Reset, scrubber, budget, scenarios) live in the **DEMO ▸** drawer (key `d`). Design notes:
+`../docs/ui-redesign.md`.
 
 > **`../data/` now holds the REAL data** from the pipeline (HiRISE terrain, Stack et al. geology, CRISM minerals,
 > Perseverance photos and traverse, the Three Forks depot tubes, MEDA weather, DONKI space weather) and the Engine's
@@ -27,7 +36,11 @@ URL options:
 | Param | Effect |
 | --- | --- |
 | `?data=<path>` | Load data from another folder, relative to `/web/` (default `../data/`) |
-| `?mode=hud` | Start in HUD mode |
+| `?mode=planner\|tablet\|hud\|rover` | Start in that view |
+| `?t=<min>` | Seek the sim to that time after load (e.g. `?mode=tablet&t=24`) |
+| `?fault=link,air,storm,hazard` | Turn faults on from the start (e.g. `?mode=rover&fault=hazard&t=97`) |
+| `?slow=1` | Slow pace on from the start (with `?budget=demo&t=40` the tablet shows the reroute card) |
+| `?demo=1` | Open the DEMO drawer |
 | `?variant=skipA` | Start with another route variant as the plan |
 | `?budget=demo` | Start with the DEMO budget (240 min); `?budget=<minutes>` sets another demo value |
 

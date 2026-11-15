@@ -6,6 +6,8 @@ import { initSim } from './sim.js';
 import { initMap } from './map.js';
 import { initPanels } from './panels.js';
 import { initHud } from './hud.js';
+import { initTablet } from './tablet.js';
+import { initRover } from './rover.js';
 
 // ---------------------------------------------------------------------------
 // Tunable demo constants (shown in the UI as assumptions where relevant).
@@ -512,8 +514,10 @@ function toggleKey(key) {
   }
 }
 
+export const MODES = ['planner', 'tablet', 'hud', 'rover'];
+
 export function setMode(mode) {
-  if (mode !== 'planner' && mode !== 'hud') return;
+  if (!MODES.includes(mode)) return;
   setState({ mode });
 }
 
@@ -582,12 +586,29 @@ function wireTopBar(config) {
     btn.addEventListener('click', () => setMode(btn.dataset.modeBtn));
   });
 
+  // DEMO drawer: presenter controls (clock, speed, budget, scenarios). Same element ids as the old top bar.
+  const drawer = $('#demo-drawer');
+  const demoBtn = $('#btn-demo');
+  const setDrawer = (open) => {
+    drawer.hidden = !open;
+    demoBtn.setAttribute('aria-expanded', String(open));
+    demoBtn.textContent = open ? 'DEMO ▾' : 'DEMO ▸';
+  };
+  demoBtn.addEventListener('click', () => setDrawer(drawer.hidden));
+  if (new URLSearchParams(location.search).get('demo') === '1') setDrawer(true);   // ?demo=1 opens the drawer
+  document.addEventListener('pointerdown', (e) => {
+    if (!drawer.hidden && !drawer.contains(e.target) && !demoBtn.contains(e.target)) setDrawer(false);
+  });
+
   document.addEventListener('keydown', (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'select' || tag === 'textarea' || e.target.isContentEditable) return;
     if (e.key === 'h' || e.key === 'H') { setMode(getState().mode === 'hud' ? 'planner' : 'hud'); e.preventDefault(); }
-    else if (e.key === 'Escape' && getState().mode === 'hud') setMode('planner');
+    else if (e.key >= '1' && e.key <= '4') { setMode(MODES[Number(e.key) - 1]); e.preventDefault(); }
+    else if (e.key === 'd' || e.key === 'D') { setDrawer(drawer.hidden); e.preventDefault(); }
+    else if (e.key === 'Escape' && !drawer.hidden) setDrawer(false);
+    else if (e.key === 'Escape' && getState().mode !== 'planner') setMode('planner');
     else if (e.key === ' ' && tag !== 'button') { setState({ playing: !getState().playing }); e.preventDefault(); }
     else if (e.key === 'r' || e.key === 'R') { setState({ playing: false }); emit('sim:reset'); }
   });
@@ -653,6 +674,8 @@ function wireMode() {
   const apply = (mode) => {
     document.body.dataset.mode = mode;
     $('#hud').hidden = mode !== 'hud';
+    $('#tablet').hidden = mode !== 'tablet';
+    $('#rover').hidden = mode !== 'rover';
   };
   apply(getState().mode);
   subscribe((s, prev, changed) => { if (changed.has('mode')) apply(s.mode); });
@@ -678,14 +701,18 @@ async function boot() {
   const qb = params.get('budget');
   const demoBudgetMin = qb === 'demo' ? config.demoBudgetMin : (Number(qb) > 0 && Number(qb) !== config.budgetMin ? Number(qb) : null);
   state = {
-    mode: params.get('mode') === 'hud' ? 'hud' : 'planner',
+    mode: MODES.includes(params.get('mode')) ? params.get('mode') : 'planner',
     plannedVariantId: data.variantsById[params.get('variant')] ? params.get('variant') : data.routes.variants[0].id,
     selectedStopId: null,
     layersOn,
     playing: false,
     speed: DEFAULT_SPEED,
-    slowPace: false,
-    faults: { linkLost: false, highAir: false, storm: false, hazard: false },
+    // Deep links for demos and screenshot checks: ?slow=1, ?fault=link,air,storm,hazard (comma list).
+    slowPace: params.get('slow') === '1',
+    faults: (() => {
+      const f = new Set((params.get('fault') || '').split(',').map((x) => x.trim()));
+      return { linkLost: f.has('link'), highAir: f.has('air'), storm: f.has('storm'), hazard: f.has('hazard') };
+    })(),
     demoBudgetMin,          // null = real suit budget; a number = DEMO override (see effectiveBudget in util.js)
     roverPathOn: false,     // map.js: Perseverance's real traverse overlay
     depotOn: true,          // map.js: the 10 depot tubes
@@ -704,6 +731,8 @@ async function boot() {
       map: $('#map'),
       sidePanel: $('#side-panel'),
       hud: $('#hud'),
+      tablet: $('#tablet'),
+      rover: $('#rover'),
       toasts: $('#toasts'),
     },
     modules: {},
@@ -715,7 +744,8 @@ async function boot() {
     if (!a || a.toast === false) return;
     // The HUD has its own alert banner and replan card, and the planner shows the replan card in the
     // side panel, so sim alerts only toast in planner mode and replan proposals never toast.
-    if (getState().mode === 'hud' || a.kind === 'replan') return;
+    const m = getState().mode;
+    if (m === 'hud' || m === 'tablet' || a.kind === 'replan') return;
     toast({ level: a.level, title: a.title, text: a.text, timeoutMs: a.level === 'danger' ? 6000 : 4000 });
   });
 
@@ -723,7 +753,8 @@ async function boot() {
   wireTopBar(config);
 
   // sim first so state.sim exists before the views render; each init is isolated.
-  const inits = [['sim', initSim], ['map', initMap], ['panels', initPanels], ['hud', initHud]];
+  const inits = [['sim', initSim], ['map', initMap], ['panels', initPanels], ['hud', initHud],
+    ['tablet', initTablet], ['rover', initRover]];
   for (const [name, init] of inits) {
     try {
       ctx.modules[name] = (await init(ctx)) ?? null;
@@ -733,6 +764,9 @@ async function boot() {
     }
   }
   emit('app:ready', ctx);
+  // ?t=<minutes>: jump the sim to that time after load (same as the scrubber), for demos and screenshot checks.
+  const t0 = Number(params.get('t'));
+  if (t0 > 0) emit('sim:seek', { t: t0 });
 }
 
 boot();

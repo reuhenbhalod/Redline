@@ -4,11 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Marswalk Planner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="map.css">
   <link rel="stylesheet" href="panels.css">
   <link rel="stylesheet" href="hud.css">
+  <link rel="stylesheet" href="tablet.css">
+  <link rel="stylesheet" href="rover.css">
   <!-- Leaflet is a classic script: it defines window.L before app.js (a module) runs. -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module" src="app.js"></script>
@@ -16,51 +21,67 @@
 <body data-mode="planner">
   <header id="topbar">
     <div class="tb-group tb-brand">
-      <span class="brand-mark" aria-hidden="true"></span>
-      <h1 class="brand-title">Marswalk Planner</h1>
+      <span class="brand-title">MARSWALK<span class="brand-slash">/</span></span>
       <span id="fake-badge" class="badge badge-fake" hidden title="bounds.json / routes.json are marked fake: true">FAKE DATA</span>
       <span id="demo-badge" class="badge badge-demo" hidden>DEMO BUDGET</span>
     </div>
 
-    <div class="tb-group" role="group" aria-label="Mode">
-      <div class="seg" id="mode-switch">
-        <button type="button" class="seg-btn" data-mode-btn="planner" aria-pressed="true">Planner</button>
-        <button type="button" class="seg-btn" data-mode-btn="hud" aria-pressed="false" title="Helmet HUD (h)">HUD</button>
-      </div>
-    </div>
+    <nav class="tb-views" id="mode-switch" aria-label="Views">
+      <button type="button" class="view-tab" data-mode-btn="planner" aria-pressed="true" title="Habitat planner (1)">Planner</button>
+      <button type="button" class="view-tab" data-mode-btn="tablet" aria-pressed="false" title="Astronaut tablet (2)">Astronaut tablet</button>
+      <button type="button" class="view-tab" data-mode-btn="hud" aria-pressed="false" title="Helmet HUD (3 or h)">Helmet HUD</button>
+      <button type="button" class="view-tab" data-mode-btn="rover" aria-pressed="false" title="Rover view (4)">Rover</button>
+    </nav>
 
-    <div class="tb-group tb-sim" role="group" aria-label="Sim clock">
-      <button type="button" id="btn-play" class="btn btn-primary" title="Play / pause (space)">Play</button>
-      <label class="tb-field" title="Sim speed (x real time)">
-        <span class="sr-only">Speed</span>
-        <select id="sel-speed">
-          <option value="60">60×</option>
-          <option value="120">120×</option>
-          <option value="300" selected>300×</option>
-          <option value="600">600×</option>
-          <option value="1200">1200×</option>
-        </select>
-      </label>
-      <button type="button" id="btn-reset" class="btn" title="Reset sim (r)">Reset</button>
-      <input type="range" id="scrub" min="0" max="480" step="0.5" value="0" aria-label="Sim time scrubber">
+    <div class="tb-group tb-right">
       <span id="clock" class="clock" title="Sim time since leaving the habitat">T+0:00</span>
       <span id="status-chip" class="chip">idle</span>
+      <button type="button" id="btn-play" class="btn btn-primary" title="Play / pause (space)">Play</button>
+      <button type="button" id="btn-demo" class="btn btn-demo" aria-expanded="false" aria-controls="demo-drawer" title="Presenter controls (d)">DEMO ▸</button>
     </div>
+  </header>
 
-    <div class="tb-group tb-toggles" role="group" aria-label="Demo toggles">
-      <label class="tb-field" title="Suit budget used by the sim">
-        <span class="sr-only">Suit budget</span>
+  <section id="demo-drawer" aria-label="Demo controls" hidden>
+    <div class="dd-col">
+      <h2 class="dd-h">Sim clock</h2>
+      <div class="dd-row">
+        <label class="tb-field" title="Sim speed (x real time)">
+          <span class="dd-lab">Speed</span>
+          <select id="sel-speed">
+            <option value="60">60×</option>
+            <option value="120">120×</option>
+            <option value="300" selected>300×</option>
+            <option value="600">600×</option>
+            <option value="1200">1200×</option>
+          </select>
+        </label>
+        <button type="button" id="btn-reset" class="btn" title="Reset sim (r)">Reset</button>
+      </div>
+      <label class="dd-scrub"><span class="dd-lab">Jump to time</span>
+        <input type="range" id="scrub" min="0" max="480" step="0.5" value="0" aria-label="Sim time scrubber">
+      </label>
+      <label class="tb-field dd-budget" title="Suit budget used by the sim">
+        <span class="dd-lab">Suit budget</span>
         <select id="sel-budget" aria-label="Suit budget (Demo budget is a DEMO SETTING, not the real suit budget)">
           <option value="">Real budget</option>
         </select>
       </label>
-      <button type="button" class="toggle" id="tgl-slow" data-toggle="slowPace" aria-pressed="false" title="Crew walks slower than planned so the replan fires">Slow pace</button>
-      <button type="button" class="toggle toggle-fault" id="tgl-link" data-toggle="faults.linkLost" aria-pressed="false" title="Fallback demo: rover radio link lost">Cut rover link</button>
-      <button type="button" class="toggle toggle-fault" id="tgl-air" data-toggle="faults.highAir" aria-pressed="false" title="Fallback demo: air use higher than planned">High air use</button>
-      <button type="button" class="toggle toggle-fault" id="tgl-storm" data-toggle="faults.storm" aria-pressed="false" title="Fallback demo: dust / solar storm starts">Storm</button>
-      <button type="button" class="toggle toggle-fault" id="tgl-hazard" data-toggle="faults.hazard" aria-pressed="false" title="Demo: the rover camera confirms a rock field ahead and a detour is proposed">Rock field</button>
+      <p class="dd-note">Demo 240 min is a DEMO SETTING, not the real suit budget. Change it before Play.</p>
     </div>
-  </header>
+    <div class="dd-col dd-scen">
+      <h2 class="dd-h">Scenarios</h2>
+      <button type="button" class="toggle scen" id="tgl-hazard" data-toggle="faults.hazard" aria-pressed="false">
+        <span class="scen-name">Rock field</span><span class="scen-desc">Rover camera confirms rocks on A → B; detour proposed</span></button>
+      <button type="button" class="toggle toggle-fault scen" id="tgl-air" data-toggle="faults.highAir" aria-pressed="false">
+        <span class="scen-name">High air use</span><span class="scen-desc">Air burns 1.6× faster; turn-around alert (needs Demo 240)</span></button>
+      <button type="button" class="toggle toggle-fault scen" id="tgl-link" data-toggle="faults.linkLost" aria-pressed="false">
+        <span class="scen-name">Cut rover link</span><span class="scen-desc">Suit-only mode: dead reckoning, way home</span></button>
+      <button type="button" class="toggle toggle-fault scen" id="tgl-storm" data-toggle="faults.storm" aria-pressed="false">
+        <span class="scen-name">Storm</span><span class="scen-desc">Dust / solar storm: walk aborted, shortest way home</span></button>
+      <button type="button" class="toggle scen" id="tgl-slow" data-toggle="slowPace" aria-pressed="false">
+        <span class="scen-name">Slow pace</span><span class="scen-desc">Crew walks at 0.8×; replan at the next checkpoint</span></button>
+    </div>
+  </section>
 
   <main id="planner" aria-label="Habitat planner">
     <div id="map" aria-label="Map"></div>
@@ -68,6 +89,8 @@
   </main>
 
   <section id="hud" aria-label="Helmet HUD" hidden></section>
+  <section id="tablet" aria-label="Astronaut tablet" hidden></section>
+  <section id="rover" aria-label="Rover view" hidden></section>
 
   <div id="toasts" aria-live="polite"></div>
 
