@@ -14,15 +14,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=20261115000826">
-  <link rel="stylesheet" href="map.css?v=20261115000826">
-  <link rel="stylesheet" href="panels.css?v=20261115000826">
-  <link rel="stylesheet" href="tablet.css?v=20261115000826">
-  <link rel="stylesheet" href="planner.css?v=20261115000826">
+  <link rel="stylesheet" href="style.css?v=20261115001605">
+  <link rel="stylesheet" href="map.css?v=20261115001605">
+  <link rel="stylesheet" href="panels.css?v=20261115001605">
+  <link rel="stylesheet" href="tablet.css?v=20261115001605">
+  <link rel="stylesheet" href="planner.css?v=20261115001605">
   <!-- Leaflet is a classic script: it defines window.L before app.js (a module) runs. -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script type="importmap" data-stamp>{"imports":{"./app.js":"./app.js?v=20261115000826","./map.js":"./map.js?v=20261115000826","./minimap.js":"./minimap.js?v=20261115000826","./panels.js":"./panels.js?v=20261115000826","./planner.js":"./planner.js?v=20261115000826","./sim.js":"./sim.js?v=20261115000826","./smooth.js":"./smooth.js?v=20261115000826","./tablet.js":"./tablet.js?v=20261115000826","./util.js":"./util.js?v=20261115000826"}}</script>
-  <script type="module" src="app.js?v=20261115000826"></script>
+  <script type="importmap" data-stamp>{"imports":{"./app.js":"./app.js?v=20261115001605","./events.js":"./events.js?v=20261115001605","./map.js":"./map.js?v=20261115001605","./minimap.js":"./minimap.js?v=20261115001605","./panels.js":"./panels.js?v=20261115001605","./planner.js":"./planner.js?v=20261115001605","./sim.js":"./sim.js?v=20261115001605","./smooth.js":"./smooth.js?v=20261115001605","./tablet.js":"./tablet.js?v=20261115001605","./util.js":"./util.js?v=20261115001605"}}</script>
+  <script type="module" src="app.js?v=20261115001605"></script>
 </head>
 <body data-mode="planner">
   <header id="topbar">
@@ -39,6 +39,7 @@
     </nav>
 
     <div class="tb-group tb-right">
+      <span id="storm-chip" class="chip storm-chip" hidden title="Solar storm forecast (simulated): be inside the habitat before this runs out"></span>
       <span id="clock" class="clock" title="Sim time since leaving the habitat">T+0:00</span>
       <span id="status-chip" class="chip">idle</span>
       <button type="button" id="btn-play" class="btn btn-primary" title="Play / pause (space)">Play</button>
@@ -60,6 +61,16 @@
   </main>
 
   <section id="tablet" aria-label="Astronaut tablet" hidden></section>
+
+  <section id="event-pop" role="alertdialog" aria-label="Walk alert" hidden>
+    <div class="ep-card">
+      <span class="ep-k" data-k></span>
+      <h2 class="ep-h" data-h></h2>
+      <p class="ep-t" data-t></p>
+      <div class="ep-facts" data-facts></div>
+      <button type="button" class="ep-btn">Understood</button>
+    </div>
+  </section>
 
   <div id="toasts" aria-live="polite"></div>
 
