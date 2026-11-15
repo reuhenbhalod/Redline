@@ -44,8 +44,9 @@
 
 /* ---------- map chrome repositioned around the rail and sheet ---------- */
 #map .map-layers { display: none !important; }                 /* replaced by the rail + legend */
-#map .leaflet-top.leaflet-left { top: auto; bottom: 64px; left: auto; right: calc(var(--panel-w) + 44px); }
-#map .leaflet-top.leaflet-left .leaflet-control { clear: none; float: right; margin: 0 0 0 8px; }
+/* zoom, Fit and Follow crew: top-right of the open map area, clear of the readout and credits (bottom-right) */
+#map .leaflet-top.leaflet-left { top: 20px; left: auto; right: calc(var(--panel-w) + 44px); display: flex; gap: 8px; align-items: flex-start; }
+#map .leaflet-top.leaflet-left .leaflet-control { clear: none; float: none; margin: 0; }
 #map .leaflet-bottom.leaflet-right { right: calc(var(--panel-w) + 36px); }
 #map .leaflet-bottom.leaflet-left { left: 114px; }
 

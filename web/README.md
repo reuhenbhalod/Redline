@@ -1,4 +1,4 @@
-# Marswalk Planner: web app
+# Redline: web app
 
 A static web app for planning and flying a two-person Mars EVA. Two views (top-bar tabs, keys 1–2; the helmet HUD and rover views were removed Nov 14):
 

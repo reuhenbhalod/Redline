@@ -1,6 +1,6 @@
 # Redline
 
-Marswalk Planner for NASA Space Apps 2026 ("Interplanetary Survival Guide: Martian Map"). Full design: [docs/architecture.md](docs/architecture.md).
+Redline: a Mars EVA planner for NASA Space Apps 2026 ("Interplanetary Survival Guide: Martian Map"). Full design: [docs/architecture.md](docs/architecture.md).
 
 **Live app: https://reuhenbhalod.github.io/Redline/** (no login). Views: Planner, Astronaut tablet; presenter controls under **DEMO ▸**.
 Demo shortcuts: [tablet mid-walk](https://reuhenbhalod.github.io/Redline/web/?mode=tablet&t=24) ·
