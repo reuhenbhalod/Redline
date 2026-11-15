@@ -5,7 +5,7 @@
   --hud-accent: var(--hud-fg);
   --hud-line: color-mix(in srgb, var(--hud-fg) 55%, transparent);
   display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(ellipse at 50% 40%, #0b1513 0%, var(--hud-bg) 70%);
+  background: radial-gradient(ellipse at 50% 40%, #16120f 0%, var(--hud-bg) 72%);
   font-family: var(--mono);
   user-select: none;
 }

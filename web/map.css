@@ -1,20 +1,22 @@
 /* map.css — owned by map.js (Leaflet map, layer control + legends, stop markers, route polylines, crew/rover dots). */
 
-#map.map-root { background: #0b0706; font-family: var(--font); }
+#map.map-root { background: #0d0b0a; font-family: var(--font); }
 #map .leaflet-container,
-#map.leaflet-container { background: #0b0706; font: var(--fs-sm)/1.35 var(--font); }
-#map .map-basemap { image-rendering: auto; }
+#map.leaflet-container { background: #0d0b0a; font: var(--fs-sm)/1.35 var(--font); }
+#map .map-basemap { image-rendering: auto; filter: var(--map-tint); }
+/* 100 m survey grid (map.js draws it as an overlay registered to the image, so it scales with zoom). */
+#map .map-grid { pointer-events: none; opacity: 0.55; }
 #map .map-ov { image-rendering: pixelated; mix-blend-mode: normal; }
 
 /* ---------- Controls (shared look) ---------- */
 #map .map-ctl {
-  background: rgba(34, 25, 21, 0.92); color: var(--text);
+  background: var(--glass); color: var(--text);
   border: 1px solid var(--border); border-radius: var(--radius);
-  box-shadow: var(--shadow); backdrop-filter: blur(3px);
+  box-shadow: none; backdrop-filter: blur(3px);
 }
 #map .map-ctl-title {
-  font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.7px;
-  color: var(--text-dim); margin-bottom: 6px; font-weight: 650;
+  font: 500 10.5px/1.3 var(--mono); text-transform: uppercase; letter-spacing: var(--label-ls);
+  color: var(--text-dim); margin-bottom: 8px;
 }
 #map .map-assume { color: var(--warn); font-style: normal; font-size: 10px; opacity: 0.9; }
 #map .map-empty { color: var(--text-faint); font-size: var(--fs-xs); }
@@ -42,9 +44,9 @@
 #map .map-btn:hover { background: var(--surface-3); }
 #map .map-btn[aria-pressed="true"] { background: var(--crew-1); color: #061018; font-weight: 650; }
 #map .leaflet-bar a, #map .leaflet-bar a:hover {
-  background: rgba(34, 25, 21, 0.92); color: var(--text); border-bottom-color: var(--border);
+  background: var(--glass); color: var(--text); border-bottom-color: var(--border);
 }
-#map .leaflet-bar a.leaflet-disabled { color: var(--text-faint); background: rgba(34, 25, 21, 0.7); }
+#map .leaflet-bar a.leaflet-disabled { color: var(--text-faint); background: rgba(18, 16, 14, 0.7); }
 #map .leaflet-touch .leaflet-bar, #map.leaflet-touch .leaflet-bar { border-color: var(--border); }
 
 /* Scale bar (bottom-left) */
@@ -81,25 +83,27 @@
 #map .map-stop-depot { --stop-c: var(--stop-depot); }
 #map .map-stop-pin {
   position: absolute; inset: 3px; display: grid; place-items: center; z-index: 0;
-  color: #160d08; font: 800 13px/1 var(--font); cursor: pointer; transition: transform 0.12s;
+  color: var(--signal-ink); font: 700 12.5px/1 var(--mono); cursor: pointer; transition: transform 0.12s;
 }
 #map .map-stop-pin::before {
   content: ""; position: absolute; inset: 0; z-index: -1;
-  background: var(--stop-c); border: 2px solid #160d08; border-radius: 50%;
-  box-shadow: 0 0 0 2px var(--stop-c), 0 3px 10px rgba(0, 0, 0, 0.6);
+  background: var(--stop-c); border: 2px solid var(--bg); border-radius: 2px;
+  transform: rotate(45deg) scale(0.78);
+  box-shadow: 0 0 0 1px var(--stop-c), 0 3px 10px rgba(0, 0, 0, 0.6);
 }
 /* Kind-specific shapes: base = rounded square (habitat), depot = diamond, science = circle. */
-#map .map-stop-base .map-stop-pin::before { border-radius: 6px; }
-#map .map-stop-depot .map-stop-pin::before { border-radius: 4px; transform: rotate(45deg) scale(0.88); }
+/* Every stop is a diamond. The habitat (base) is hollow: dark fill, light outline, light letter. */
+#map .map-stop-base .map-stop-pin { color: var(--text); }
+#map .map-stop-base .map-stop-pin::before { background: var(--bg); border-color: var(--stop-base); }
 #map .map-stop-name {
   position: absolute; left: 32px; top: 50%; transform: translateY(-50%);
-  white-space: nowrap; font: 650 var(--fs-xs)/1.2 var(--font); color: var(--text);
-  background: rgba(23, 17, 14, 0.82); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px;
+  white-space: nowrap; font: 500 10.5px/1.2 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text);
+  background: rgba(18, 16, 14, 0.86); border: 0; border-radius: 0; padding: 4px 8px;
   pointer-events: none;
 }
 #map .map-stop-check {
   position: absolute; right: -4px; top: -4px; width: 15px; height: 15px; border-radius: 50%;
-  background: var(--ok); color: #06210f; font: 800 10px/15px var(--font); text-align: center;
+  background: var(--ok); color: #06210f; font: 700 10px/15px var(--mono); text-align: center;
   display: none; border: 1px solid #06210f;
 }
 #map .map-stop:hover .map-stop-pin { transform: scale(1.1); }
@@ -119,10 +123,10 @@
 #map.map-link-lost::after,
 #map.map-storm::after {
   content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 800;
-  box-shadow: inset 0 0 0 3px var(--danger), inset 0 0 40px rgba(239, 90, 76, 0.35);
+  box-shadow: inset 0 0 0 3px var(--danger), inset 0 0 40px rgba(255, 90, 79, 0.35);
 }
-#map.map-link-lost::after { box-shadow: inset 0 0 0 3px var(--warn), inset 0 0 40px rgba(242, 179, 61, 0.25); }
-#map.map-storm::after { box-shadow: inset 0 0 0 3px var(--danger), inset 0 0 60px rgba(239, 90, 76, 0.4); }
+#map.map-link-lost::after { box-shadow: inset 0 0 0 3px var(--warn), inset 0 0 40px rgba(255, 181, 71, 0.25); }
+#map.map-storm::after { box-shadow: inset 0 0 0 3px var(--danger), inset 0 0 60px rgba(255, 90, 79, 0.4); }
 
 @media (max-width: 760px) {
   #map .map-layers { min-width: 150px; max-width: 190px; padding: 7px 8px; }
@@ -165,7 +169,7 @@
 #map .map-sol {
   position: absolute; left: 4px; top: -8px; white-space: nowrap; pointer-events: none;
   font: 600 10px/1.3 var(--mono); color: var(--rover-path);
-  background: rgba(23, 17, 14, 0.78); border-radius: 3px; padding: 0 4px;
+  background: rgba(18, 16, 14, 0.82); border-radius: 3px; padding: 0 4px;
 }
 #map .map-sol.is-key { color: #160d08; background: var(--rover-path); font-weight: 700; }
 
@@ -174,8 +178,8 @@
 #map .map-tubes-wrap { background: none; border: 0; }
 #map .map-tubes-badge {
   position: absolute; left: 10px; top: 14px; white-space: nowrap; cursor: pointer;
-  font: 700 10.5px/1.5 var(--font); color: #160d08; background: var(--tube);
-  border: 1px solid #160d08; border-radius: 9px; padding: 0 7px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+  font: 600 10.5px/1.5 var(--mono); letter-spacing: 0.08em; color: var(--bg); background: var(--tube);
+  border: 1px solid var(--bg); border-radius: 0; padding: 0 7px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
 }
 #map .map-tubes-badge:hover { background: var(--stop-depot); }
 #map .map-popup .leaflet-popup-content-wrapper,
@@ -202,7 +206,7 @@
 /* Imagery credit (bottom-right, under the readout) */
 #map .map-credit {
   max-width: 300px; margin: 0 6px 4px 0 !important; padding: 2px 6px; border-radius: 3px;
-  font-size: 9.5px; line-height: 1.35; color: var(--text-faint); background: rgba(11, 7, 6, 0.7); text-align: right;
+  font-size: 9.5px; line-height: 1.35; color: var(--text-faint); background: rgba(13, 11, 10, 0.75); text-align: right;
 }
 
 @media (max-width: 760px) {

@@ -102,6 +102,18 @@ export function initMap(ctx) {
   basemap.on('error', () => ctx.toast({ level: 'warn', title: 'Basemap missing', text: `Could not load ${data.url('basemap.png')}` }));
   basemap.addTo(map);
 
+  // 100 m survey grid, registered to the image (an SVG overlay on the same bounds, so it scales with zoom).
+  {
+    const gw = ctx.config.widthPx, gh = ctx.config.heightPx;
+    const sp = 100 / (ctx.config.pixelM || 2);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${gw}" height="${gh}" viewBox="0 0 ${gw} ${gh}">`
+      + `<defs><pattern id="g" width="${sp}" height="${sp}" patternUnits="userSpaceOnUse">`
+      + `<path d="M${sp} 0H0V${sp}" fill="none" stroke="rgb(244,237,228)" stroke-opacity="0.16" stroke-width="1.4"/></pattern></defs>`
+      + `<rect width="${gw}" height="${gh}" fill="url(#g)"/></svg>`;
+    L.imageOverlay(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, bounds,
+      { pane: 'map-base', interactive: false, className: 'map-grid' }).addTo(map);
+  }
+
   // ---------------------------------------------------------------- overlays
   const opacity = {};
   const overlays = {};
